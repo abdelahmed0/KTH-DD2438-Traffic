@@ -5463,9 +5463,9 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   target_object: {fileID: 0}
-  cameraPosition: {x: 0, y: 3, z: -5}
-  cameraTargetOffset: {x: 0, y: 2, z: 0}
-  CameraFixed: 0
+  cameraPosition: {x: 0, y: 45, z: 0}
+  cameraTargetOffset: {x: 0, y: 0, z: 0}
+  CameraFixed: 1
 --- !u!1 &571676390
 GameObject:
   m_ObjectHideFlags: 0
