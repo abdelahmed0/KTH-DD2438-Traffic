@@ -88,7 +88,8 @@ namespace PathPlanning
         {
             this.localPlanner = new LocalPlanner();
         }
-        public (List<Vector2>, List<float>) FindPath(MapManager mapManager, CollisionDetector detector, float timeLimit=20f)
+        
+        public (List<Vector2>, List<float>) FindPath(Vector3 globalStart, Vector3 globalGoal, CollisionDetector detector, float timeLimit=20f)
         {
             this.detector = detector;
             this.nodes = new List<Node>();
@@ -100,8 +101,8 @@ namespace PathPlanning
 
             List<Node> goalNodes = new List<Node>();
 
-            Vector2 startPos = new Vector2(mapManager.GetGlobalStartPosition().x, mapManager.GetGlobalStartPosition().z);
-            Vector2 goalPos = new Vector2(mapManager.GetGlobalGoalPosition().x, mapManager.GetGlobalGoalPosition().z);
+            Vector2 startPos = new Vector2(globalStart.x, globalStart.z);
+            Vector2 goalPos = new Vector2(globalGoal.x, globalGoal.z);
             Vector2 startVel = new Vector2(0, 0.1f); // Just guessing that the car always points in the same direction
 
             Node root = new Node(startPos, startVel);
