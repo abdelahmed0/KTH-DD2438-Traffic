@@ -1,10 +1,6 @@
 using UnityEngine;
-using System.Collections;
 using System.Collections.Generic;
 using System;
-using UnityEngine.UIElements;
-using UnityEditorInternal;
-using System.Linq;
 using Scripts.Map;
 
 namespace aStar

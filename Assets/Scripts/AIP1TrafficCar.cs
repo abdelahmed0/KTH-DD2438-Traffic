@@ -1,12 +1,10 @@
-﻿using System.Linq;
-using Imported.StandardAssets.Vehicles.Car.Scripts;
+﻿using Imported.StandardAssets.Vehicles.Car.Scripts;
 using System.Collections.Generic;
 using Scripts.Game;
 using Scripts.Map;
 using UnityEngine;
 
 using aStar;
-using util;
 using System;
 
 [RequireComponent(typeof(CarController))]
@@ -42,7 +40,7 @@ public class AIP1TrafficCar : MonoBehaviour
     private void Start()
     {
         m_Car = GetComponent<CarController>();
-        m_CurrentGoal = (LineOfSightGoal)FindObjectOfType<GameManagerA2>().vehicleToGoalMapping[gameObject]; //This car's goal.
+        m_CurrentGoal = (LineOfSightGoal)FindObjectOfType<GameManagerA2>().vehicleToGoalMapping[gameObject]; // This car's goal
         my_rigidbody = GetComponent<Rigidbody>();
 
         m_MapManager = FindObjectOfType<MapManager>();
@@ -50,7 +48,7 @@ public class AIP1TrafficCar : MonoBehaviour
         m_ObstacleMap = m_ObstacleMapManager.ObstacleMap;
         var carCollider = gameObject.transform.Find("Colliders/ColliderBottom").gameObject.GetComponent<BoxCollider>();
 
-        if (!mapResized) // FIXME: Working for all cars except first one
+        if (!mapResized)
         {
             // Rescale grid to have square shaped grid cells with size proportional to the car length
             float gridCellSize = carCollider.transform.localScale.z;
@@ -65,7 +63,6 @@ public class AIP1TrafficCar : MonoBehaviour
             m_ObstacleMap = m_ObstacleMapManager.ObstacleMap;
             mapResized = true;
         }
-
 
         // m_OtherCars = GameObject.FindGameObjectsWithTag("Player"); // TODO: use
 
