@@ -101,8 +101,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   colliderResizeFactor: 1.2
-  numberSteeringAngles: 3
-  allowReversing: 1
+  numberSteeringAngles: 5
+  allowReversing: 0
   smoothPath: 0
   k_p: 2
   k_i: 0.1

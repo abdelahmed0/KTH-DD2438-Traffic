@@ -17,7 +17,7 @@ namespace aStar
         // Resolution of 10 corresponds to 360/10=36 possible angles per cell
         public static float AngleResolution = 10f;
         private const float GoalThreshold = 0.1f;
-        private const int maxSteps = 10000;
+        private const int maxSteps = 100000;
 
         private readonly float colliderResizeFactor;
         private readonly float stepDistance;
@@ -44,20 +44,20 @@ namespace aStar
             this.collider = collider;
             this.colliderResizeFactor = colliderResizeFactor;
             vehicleLength = grid.WorldToLocal(collider.transform.localScale).z;
-            Debug.Log("Collider size: " + grid.WorldToLocal(collider.size));
+            // Debug.Log("Collider size: " + grid.WorldToLocal(collider.size));
 
             // Incorporate cellSize and cellGap to prevent steps from landing in the same cell they started in
             Vector3 cellSize = grid.cellSize;
-            Debug.Log("Cellsize: " + cellSize);
+            // Debug.Log("Cellsize: " + cellSize);
             Vector3 cellGap = grid.cellGap;
             float cellDiagonal = Mathf.Sqrt(cellSize.x * cellSize.x + cellSize.y * cellSize.y);
             float gapDiagonal = Mathf.Sqrt(cellGap.x * cellGap.x + cellGap.y * cellGap.y);
             stepDistance = cellDiagonal + gapDiagonal + 0.00001f;
             Vector3 temp = grid.LocalToWorld(cellSize + cellGap);
             globalStepDistance = Mathf.Sqrt(temp.x * temp.x + temp.y * temp.y);
-            Debug.Log("Step distance: " + stepDistance);
-            Debug.Log("Global step distance: " + globalStepDistance);
-            Debug.Log("Car length" + vehicleLength);
+            // Debug.Log("Step distance: " + stepDistance);
+            // Debug.Log("Global step distance: " + globalStepDistance);
+            // Debug.Log("Car length" + vehicleLength);
 
             this.maxSteeringAngle = maxSteeringAngle;
             this.fixedOrientation = fixedOrientation;
@@ -93,19 +93,31 @@ namespace aStar
             openSet.Enqueue(startNode.GetFScore(), startNode);
 
             int steps = 0;
-            while (openSet.Count > 0 && steps < maxSteps)
+            while (openSet.Count > 0)
             {
                 steps++;
                 var currentNode = openSet.Dequeue().Value;
                 closedSet.Add(currentNode);
 
-                if (GoalReached(currentNode.LocalPosition))
+                if (GoalReached(currentNode.LocalPosition) || steps >= maxSteps) 
                 {
-                    var goalNode = currentNode.Copy();
-                    goalNode.parent = currentNode;
-                    goalNode.LocalPosition = localGoal;
-                    // Reconstruct the path if the goal is reached
-                    var path = goalNode.BackTrackPath();
+                    // Reconstruct the path if the goal is reached or best path so far if maximum step number is reached
+                    AStarNode lastNode;
+
+                    if (steps >= maxSteps) // Best so far
+                    {
+                        Debug.Log($"Goal not found in {steps} steps. Shortcutting to goal.");
+                        lastNode = openSet.Dequeue().Value;
+                    } 
+                    else // Goal reached
+                    {
+                        lastNode = currentNode.Copy();
+                    }
+                    
+                    lastNode.parent = currentNode;
+                    lastNode.LocalPosition = localGoal;
+
+                    var path = lastNode.BackTrackPath();
                     path.Reverse();
                     return path;
                 }
@@ -143,9 +155,7 @@ namespace aStar
                     openSet.Enqueue(nextNode.GetFScore(), nextNode); // Enqueue if node was not updated
                 }
             }
-
-            Debug.LogWarning("No path found in " + steps + " steps");
-            return new List<AStarNode>();
+            return null;
         }
 
         private List<AStarNode> GenerateChildNodes(AStarNode parent)

@@ -108,7 +108,6 @@ public class AIP1TrafficCar : MonoBehaviour
         //     && (Vector3.Distance(localPosition, localNextNode) < nodeDistThreshold 
         //         || Vector3.Distance(localPosition, localNextNextNode) <  Vector3.Distance(localPosition, localNextNode)))
         // {
-        //     nodePositions.RemoveAt(0);
         //     currentNodeIdx++;
         // }
         // PidControllTowardsPosition();
