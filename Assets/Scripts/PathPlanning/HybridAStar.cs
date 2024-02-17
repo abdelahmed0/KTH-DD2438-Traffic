@@ -249,7 +249,7 @@ namespace aStar
         {
             Vector3Int cell = grid.LocalToCell(localPosition);
             Vector2Int cell2d = new Vector2Int(cell.x, cell.y);
-            if (!flowField.ContainsKey(cell2d))
+            if (flowField.ContainsKey(cell2d))
                 return flowField[cell2d] < GoalThreshold;
             return Vector2.Distance(new Vector2(localPosition.x, localPosition.z), new Vector2(localGoal.x, localGoal.z)) < GoalThreshold;
         }
@@ -258,7 +258,7 @@ namespace aStar
         {
             Vector3Int cell = grid.WorldToCell(globalPosition);
             Vector2Int cell2d = new Vector2Int(cell.x, cell.y);
-            return flowField[cell2d];
+            return flowField.ContainsKey(cell2d) ? flowField[cell2d] : float.MaxValue;
         }
 
         private void CalculateFlowField()
