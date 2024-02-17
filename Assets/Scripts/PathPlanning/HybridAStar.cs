@@ -16,8 +16,8 @@ namespace aStar
 
         // Resolution of 10 corresponds to 360/10=36 possible angles per cell
         public static float AngleResolution = 10f;
-        private const float GoalThreshold = 0.5f;
-        private const int maxSteps = 300000;
+        private const float GoalThreshold = 0.1f;
+        private const int maxSteps = 10000;
 
         private readonly float colliderResizeFactor;
         private readonly float stepDistance;
@@ -52,7 +52,7 @@ namespace aStar
             Vector3 cellGap = grid.cellGap;
             float cellDiagonal = Mathf.Sqrt(cellSize.x * cellSize.x + cellSize.y * cellSize.y);
             float gapDiagonal = Mathf.Sqrt(cellGap.x * cellGap.x + cellGap.y * cellGap.y);
-            stepDistance = cellDiagonal + gapDiagonal + 0.001f;
+            stepDistance = cellDiagonal + gapDiagonal + 0.00001f;
             Vector3 temp = grid.LocalToWorld(cellSize + cellGap);
             globalStepDistance = Mathf.Sqrt(temp.x * temp.x + temp.y * temp.y);
             Debug.Log("Step distance: " + stepDistance);
@@ -218,19 +218,24 @@ namespace aStar
             var nextCell = grid.LocalToCell(next.LocalPosition);
             if (obstacleMap.traversabilityPerCell[new Vector2Int(nextCell.x, nextCell.y)] == ObstacleMap.Traversability.Blocked)
                 return false;
+
+            // return true;
             
             // Check if path to node is blocked
             Vector3 direction = (nextGlobal - currentGlobal).normalized;
             var orientation = fixedOrientation ? Quaternion.Euler(Vector3.forward) : Quaternion.FromToRotation(Vector3.forward, direction);
-
-            bool hit = Physics.BoxCast(currentGlobal - collider.transform.localScale.z * direction,// * colliderResizeFactor,
+            bool hit = Physics.BoxCast(currentGlobal, // - collider.transform.localScale.z * direction, //* colliderResizeFactor,
                                         colliderResizeFactor * collider.transform.localScale / 2f,
-                                        direction, 
+                                        direction,
                                         out var hitInfo,
                                         orientation,
-                                        globalStepDistance + collider.transform.localScale.z);// * colliderResizeFactor);
+                                        globalStepDistance);// + collider.transform.localScale.z);// * colliderResizeFactor);
+            
+            if (hit && hitInfo.collider.Equals(collider)) // Prevent hitting own collider
+                return true;
+                
             // if (hit)
-            //     ExtDebug.DrawBoxCastOnHit(currentGlobal - collider.transform.localScale.z * direction,// - collider.transform.localScale.z * direction * colliderResizeFactor,
+            //     ExtDebug.DrawBoxCastOnHit(currentGlobal,// - collider.transform.localScale.z * direction * colliderResizeFactor,// - collider.transform.localScale.z * direction * colliderResizeFactor,
             //                             colliderResizeFactor * collider.transform.localScale / 2f,
             //                             direction, 
             //                             orientation,
@@ -249,8 +254,8 @@ namespace aStar
         {
             Vector3Int cell = grid.LocalToCell(localPosition);
             Vector2Int cell2d = new Vector2Int(cell.x, cell.y);
-            // if (flowField.ContainsKey(cell2d))
-            //     return flowField[cell2d] < GoalThreshold;
+            if (flowField.ContainsKey(cell2d))
+                return flowField[cell2d] < GoalThreshold;
             return Vector2.Distance(new Vector2(localPosition.x, localPosition.z), new Vector2(localGoal.x, localGoal.z)) < GoalThreshold;
         }
 

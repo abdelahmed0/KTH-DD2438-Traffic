@@ -100,6 +100,12 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: ac0615546388c46a68ca4014cce1578b, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  terrain_manager_game_object: {fileID: 0}
-  friends: []
-  enemies: []
+  colliderResizeFactor: 1.2
+  numberSteeringAngles: 3
+  allowReversing: 1
+  smoothPath: 0
+  k_p: 2
+  k_i: 0.1
+  k_d: 1
+  nodeDistThreshold: 0.2
+  drawDebug: 0

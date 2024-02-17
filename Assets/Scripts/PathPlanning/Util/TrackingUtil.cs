@@ -59,6 +59,53 @@ namespace util
                 return (lookAheadPos, velocity);
             }
         }
+
+        public static Vector3 LookAheadPosition(Vector3 pos, float lookAhead, List<Vector3> positions)
+        {
+            float minDistance = float.MaxValue;
+            int index = 0;
+            for (int i = 0; i < positions.Count; i++)
+            {
+                float distance = (pos - positions[i]).sqrMagnitude;
+                if (distance < minDistance)
+                {
+                    index = i;
+                    minDistance = distance;
+                }
+            }
+            int lookAheadIndex = -1;
+            for (int i = index; i < positions.Count; i++)
+            {
+                float distance = (pos - positions[i]).magnitude;
+                if (distance > lookAhead)
+                {
+                    lookAheadIndex = i - 1;
+                    break;
+                }
+            }
+
+            if (lookAheadIndex != -1)
+            {
+                Vector3 p1 = positions[lookAheadIndex];
+                Vector3 p2 = positions[lookAheadIndex + 1];
+
+                float startDist = (pos - p1).magnitude;
+                float endDist = (pos - p2).magnitude;
+
+                float mix = (lookAhead - startDist) / (endDist - startDist);
+                Vector3 lookAheadPos = p1 * (1 - mix) + p2 * mix;
+
+                return lookAheadPos;
+            }
+            else
+            {
+                int hi = positions.Count - 1;
+                Vector3 lookAheadPos = positions[hi];
+
+                return lookAheadPos;
+            }
+        }
+
         public static float CalculateAcceleration(float maxAcceleration, Vector2 currentPos, Vector2 lookAtPos, float currentVelocity, float lookAtVelocity)
         {
             float d = (lookAtPos - currentPos).magnitude;
