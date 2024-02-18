@@ -12,12 +12,12 @@ namespace aStar
 
         // Resolution of 10 corresponds to 360/10=36 possible angles per cell
         public static float AngleResolution = 10f;
+        public readonly float globalStepDistance;
         private const float GoalThreshold = 0.1f;
         private const int maxSteps = 100000;
 
         private readonly float colliderResizeFactor;
         private readonly float stepDistance;
-        private readonly float globalStepDistance;
         private readonly Grid grid;
         private readonly ObstacleMap obstacleMap;
         private readonly BoxCollider collider;

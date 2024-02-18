@@ -1,11 +1,13 @@
 ﻿using Imported.StandardAssets.Vehicles.Car.Scripts;
+using System;
+using System.Linq;
 using System.Collections.Generic;
 using Scripts.Game;
 using Scripts.Map;
 using UnityEngine;
 
 using aStar;
-using System;
+using vo;
 
 [RequireComponent(typeof(CarController))]
 public class AIP1TrafficCar : MonoBehaviour
@@ -14,7 +16,7 @@ public class AIP1TrafficCar : MonoBehaviour
     public int numberSteeringAngles = 3;
     public bool allowReversing = true;   
     public bool smoothPath = false;     
-    private Vector3 target_velocity;
+    private Vector3 targetVelocity;
     public float k_p = 2f;
     public float k_i = 0.1f;
     public float k_d = 1f;
@@ -26,6 +28,7 @@ public class AIP1TrafficCar : MonoBehaviour
     private ObstacleMap m_ObstacleMap;
     private GameObject[] m_OtherCars;
     private LineOfSightGoal m_CurrentGoal;
+    private BoxCollider m_Collider;
     Rigidbody my_rigidbody;
 
     private float steering;
@@ -36,7 +39,11 @@ public class AIP1TrafficCar : MonoBehaviour
     private HybridAStarGenerator pathFinder = null;
     public bool drawDebug = false;
 
+    private Agent agent;
+
+    private static VOManager voManager = new();
     private static bool mapResized = false;
+
     private void Start()
     {
         m_Car = GetComponent<CarController>();
@@ -46,12 +53,12 @@ public class AIP1TrafficCar : MonoBehaviour
         m_MapManager = FindObjectOfType<MapManager>();
         m_ObstacleMapManager = FindObjectOfType<ObstacleMapManager>();
         m_ObstacleMap = m_ObstacleMapManager.ObstacleMap;
-        var carCollider = gameObject.transform.Find("Colliders/ColliderBottom").gameObject.GetComponent<BoxCollider>();
+        m_Collider = gameObject.transform.Find("Colliders/ColliderBottom").gameObject.GetComponent<BoxCollider>();
 
         if (!mapResized)
         {
             // Rescale grid to have square shaped grid cells with size proportional to the car length
-            float gridCellSize = carCollider.transform.localScale.z;
+            float gridCellSize = m_Collider.transform.localScale.z;
             Vector3 gridScale = m_ObstacleMap.mapGrid.transform.localScale;
 
             m_ObstacleMapManager.grid.cellSize = new Vector3(
@@ -64,13 +71,12 @@ public class AIP1TrafficCar : MonoBehaviour
             mapResized = true;
         }
 
-        // m_OtherCars = GameObject.FindGameObjectsWithTag("Player"); // TODO: use
-
         var localStart = m_ObstacleMap.mapGrid.WorldToLocal(transform.position);
         var localGoal = m_ObstacleMap.mapGrid.WorldToLocal(m_CurrentGoal.targetPosition);
-        // Generate path
+
+        // Generate path with Hybrid A*
         currentNodeIdx = 0;
-        pathFinder = new HybridAStarGenerator(m_ObstacleMap.mapGrid, m_ObstacleMap, m_Car.m_MaximumSteerAngle, carCollider,
+        pathFinder = new HybridAStarGenerator(m_ObstacleMap.mapGrid, m_ObstacleMap, m_Car.m_MaximumSteerAngle, m_Collider,
                         colliderResizeFactor, false, allowReversing, 2f);
         nodePath = pathFinder.GeneratePath(
             new Vector3(localStart.x, 0.05f, localStart.z),
@@ -80,12 +86,16 @@ public class AIP1TrafficCar : MonoBehaviour
 
         nodePath = smoothPath ? pathFinder.SmoothPath(nodePath) : nodePath;
 
-        Vector3 old_wp = localStart;
-        foreach (var wp in nodePath)
-        {
-            Debug.DrawLine(m_ObstacleMap.mapGrid.LocalToWorld(old_wp), m_ObstacleMap.mapGrid.LocalToWorld(wp.LocalPosition), Color.magenta, 1000f);
-            old_wp = wp.LocalPosition;
-        }
+        // Vector3 old_wp = localStart;
+        // foreach (var wp in nodePath)
+        // {
+        //     Debug.DrawLine(m_ObstacleMap.mapGrid.LocalToWorld(old_wp), m_ObstacleMap.mapGrid.LocalToWorld(wp.LocalPosition), Color.magenta, 1000f);
+        //     old_wp = wp.LocalPosition;
+        // }
+
+        // Initialize velocity obstacles for traffic
+        agent = new Agent(transform.position, my_rigidbody.velocity, targetVelocity, m_Collider.transform.localScale.z * colliderResizeFactor);
+        voManager.AddAgent(agent);
     }
 
 
@@ -95,32 +105,30 @@ public class AIP1TrafficCar : MonoBehaviour
         {
             return;
         }
-        // Vector3 localPosition = m_ObstacleMap.mapGrid.WorldToLocal(transform.position);
-
-        // Vector3 localNextNode = nodePath[currentNodeIdx].LocalPosition;
-        // int nextNextIndex = Math.Clamp(currentNodeIdx+1, 0, nodePath.Count-1);
-        // Vector3 localNextNextNode = nodePath[nextNextIndex].LocalPosition;
-
-        // if (currentNodeIdx < nodePath.Count - 1 
-        //     && (Vector3.Distance(localPosition, localNextNode) < nodeDistThreshold 
-        //         || Vector3.Distance(localPosition, localNextNextNode) <  Vector3.Distance(localPosition, localNextNode)))
-        // {
-        //     currentNodeIdx++;
-        // }
-        // PidControllTowardsPosition();
-
-        PdControll();
-    }
-
-     private void PdControll()
-    {
-        currentNodeIdx = Mathf.Min(currentNodeIdx, nodePath.Count - 1);
-        Vector3 current_position = transform.position;
 
         AStarNode target = nodePath[currentNodeIdx];
         AStarNode nextTarget = nodePath[Math.Min(currentNodeIdx + 1, nodePath.Count-1)];
         Vector3 targetPosition = m_MapManager.grid.LocalToWorld(target.LocalPosition);
         Vector3 nextTargetPosition = m_MapManager.grid.LocalToWorld(nextTarget.LocalPosition);
+        targetVelocity = nextTargetPosition - targetPosition;
+
+        // Apply weighted avoidance via velocity obstacles
+        float avoidanceWeight = 0.5f;
+        agent.Update(new Agent(transform.position, my_rigidbody.velocity, targetVelocity, 5 * m_Collider.transform.localScale.z * colliderResizeFactor));
+
+        Vector3 avoidanceVelocity = voManager.CalculateNewVelocity(agent);
+        Vector3 avoidancePosition = transform.position + avoidanceVelocity.normalized * pathFinder.globalStepDistance;
+
+        PdControll(targetPosition * (1-avoidanceWeight) + avoidancePosition * avoidanceWeight, 
+                   targetVelocity * (1-avoidanceWeight) + avoidanceVelocity * avoidanceWeight);
+
+        // Debug.DrawLine(transform.position, nodePath[currentNodeIdx].GetGlobalPosition(), Color.black);
+        // Debug.DrawLine(transform.position, avoidancePosition, Color.white);
+    }
+
+    private void PdControll(Vector3 targetPosition, Vector3 targetVelocity)
+    {
+        Vector3 current_position = transform.position;
         
         // Number nodes to lookahead to see if path is turning
         int lookahead = 10;
@@ -136,10 +144,10 @@ public class AIP1TrafficCar : MonoBehaviour
 
         reach_threshold *= angle_between_vectors / 180.0f;
 
-        target_velocity = nextTargetPosition - targetPosition;
+        this.targetVelocity = targetVelocity;
 
         Vector3 pos_error = targetPosition - current_position;
-        Vector3 vel_error = target_velocity - my_rigidbody.velocity;
+        Vector3 vel_error = this.targetVelocity - my_rigidbody.velocity;
         Vector3 desired_acceleration = (k_p * pos_error + k_d * vel_error).normalized; // normalize to receive steering and accel values between (-1, 1)
 
         float steering = Vector3.Dot(desired_acceleration, transform.right);
@@ -148,12 +156,12 @@ public class AIP1TrafficCar : MonoBehaviour
         float distance = Vector3.Distance(targetPosition, current_position);
         if (distance < reach_threshold)
         {
-            currentNodeIdx++;
+            currentNodeIdx = Mathf.Min(currentNodeIdx + 1, nodePath.Count - 1);;
             if (currentNodeIdx >= nodePath.Count) return;
             targetPosition = nodePath[currentNodeIdx].GetGlobalPosition();
         }
 
-        for (int i = currentNodeIdx + 1; i < nodePath.Count; i++)
+        for (int i = currentNodeIdx + 1; i < nodePath.Count; ++i)
         {
             float current_tracked_distance = Vector3.Distance(targetPosition, current_position);
             float potential_tracked_distance = Vector3.Distance(nodePath[i].GetGlobalPosition(), current_position);
@@ -165,11 +173,6 @@ public class AIP1TrafficCar : MonoBehaviour
                 break; 
             }
         }
-        
-        // Debugging
-        currentNodeIdx = Mathf.Min(currentNodeIdx, nodePath.Count - 1);
-        Debug.DrawLine(transform.position, nodePath[currentNodeIdx].GetGlobalPosition(), Color.black);
-        Debug.DrawLine(nodePath[currentNodeIdx].GetGlobalPosition() + new Vector3(0, 0.1f, 0), nodePath[lookahead_index].GetGlobalPosition() + new Vector3(0, 0.1f, 0), Color.blue);
 
         m_Car.Move(steering, acceleration, acceleration, 0f);
     }
@@ -182,11 +185,11 @@ public class AIP1TrafficCar : MonoBehaviour
         Vector3 nextTargetPosition = m_MapManager.grid.LocalToWorld(nextTarget.LocalPosition);
 
         // Make target velocity lower in curves, where points are denser
-        target_velocity = nextTargetPosition - targetPosition;
+        targetVelocity = nextTargetPosition - targetPosition;
 
         // a PD-controller to get desired acceleration from errors in position and velocity
         Vector3 positionError = targetPosition - transform.position;
-        Vector3 velocityError = target_velocity - my_rigidbody.velocity;
+        Vector3 velocityError = targetVelocity - my_rigidbody.velocity;
         
         Vector3 proportional = k_p * positionError;
         integral += Time.fixedDeltaTime * positionError.magnitude;
@@ -198,7 +201,7 @@ public class AIP1TrafficCar : MonoBehaviour
         float steering = Vector3.Dot(desired_acceleration, transform.right);
         float acceleration = Vector3.Dot(desired_acceleration, transform.forward);            
 
-        Debug.DrawLine(targetPosition, targetPosition + target_velocity, Color.red, Time.deltaTime * 2);
+        Debug.DrawLine(targetPosition, targetPosition + targetVelocity, Color.red, Time.deltaTime * 2);
         Debug.DrawLine(my_rigidbody.position, my_rigidbody.position + my_rigidbody.velocity, Color.blue);
         Debug.DrawLine(targetPosition, targetPosition + desired_acceleration, Color.black);            
 
