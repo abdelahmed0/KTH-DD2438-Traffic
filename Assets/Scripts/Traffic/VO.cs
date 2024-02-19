@@ -24,30 +24,68 @@ namespace vo
         }
 
         // Calculate new velocity for the agent to avoid multiple obstacles, always go right of obstacles
-        public Vector3 CalculateNewVelocity(Agent agent)
+        public void CalculateNewVelocity(Agent agent, float maxSpeed, float maxAngle, bool allowReversing, out bool isColliding, out Vector2 newVelocity) // maxAngle in degrees
         {
-            // TODO: Sample in VO space around wanted velocity
-
-            Vector3 newVelocity = agent.DesiredVelocity;
             List<VelocityObstacle> vos = CalculateVelocityObstacles(agent);
-            
+            isColliding = false;
+
             foreach (VelocityObstacle vo in vos)
             {
-                float thetaRight = Vector3.Angle(vo.bound_right, Vector3.right);
-                float thetaLeft = Vector3.Angle(vo.bound_left, Vector3.right);
-                float theta = Vector3.Angle(agent.Velocity - vo.transl_vB_vA, Vector3.right);
+                Vector2 velocityInVoSpace = agent.Velocity - vo.transl_vB_vA - agent.Velocity;
+                float theta = Vector2.Angle(Vector2.right, velocityInVoSpace);
+
+                float thetaRight = Vector2.Angle(vo.bound_right, Vector2.right);
+                float thetaLeft = Vector2.Angle(vo.bound_left, Vector2.right);
                 
-                if (InBetween(thetaRight, theta, thetaLeft)) 
+                if (InBetween(thetaRight, theta, thetaLeft))
                 {
-                    newVelocity = vo.bound_right.normalized * newVelocity.magnitude;
+                    isColliding = true;
+                    break;
                 }
             }
-            Debug.DrawLine(agent.Position, agent.Position + agent.Velocity, Color.blue);
-            Debug.DrawLine(agent.Position, agent.Position + newVelocity, Color.red);
+
+            if (!isColliding)
+            {
+                newVelocity = Vector2.zero;
+                return;
+            }
+
+            newVelocity = Vector2.positiveInfinity;
+            float angleStep = 5;
+            float speedStep = maxSpeed / 5f;
+
+            // Sample in VO space around wanted velocity
+            for (float alpha = -maxAngle; alpha <= maxAngle; alpha += angleStep)
+            {
+                for (float speed = allowReversing ? -maxSpeed : 0f; speed <= maxSpeed; speed += speedStep)
+                {
+                    bool suitable = true;
+                    Vector2 sampleVelocity = Quaternion.Euler(0, 0, alpha) * agent.Velocity.normalized * speed;
+
+                    foreach (VelocityObstacle vo in vos)
+                    {
+                        Vector2 velocityInVoSpace = sampleVelocity - vo.transl_vB_vA - agent.Velocity;
+                        float theta = Vector2.Angle(Vector2.right, velocityInVoSpace);
+
+                        float thetaRight = Vector2.Angle(vo.bound_right, Vector2.right);
+                        float thetaLeft = Vector2.Angle(vo.bound_left, Vector2.right);
+                        
+                        if (InBetween(thetaRight, theta, thetaLeft))
+                        {
+                            suitable = false;
+                            break;
+                        }
+                    }
+                    
+                    if (suitable && Vector2.Distance(sampleVelocity, agent.Velocity) < Vector2.Distance(newVelocity, agent.Velocity))
+                    {
+                        newVelocity = sampleVelocity;
+                    }
+                }
+            }
+
             // DebugVos(agent, vos);
             // DebugAgent(agent);
-
-            return newVelocity;
         }
 
         // Calculate velocity obstacles for an agent
@@ -56,14 +94,14 @@ namespace vo
             List<VelocityObstacle> vos = new();
             foreach (Agent agentB in agents.Where(b => b != agentA))
             {
-                Vector3 transl_vB_vA = agentB.Velocity - agentA.Velocity;
-                Vector3 direction_BA = (agentB.Position - agentA.Position).normalized;
-                float dist_BA = Vector3.Distance(agentA.Position, agentB.Position);
+                Vector2 transl_vB_vA = agentB.Velocity - agentA.Velocity;
+                Vector2 direction_BA = (agentB.Position - agentA.Position).normalized;
+                float dist_BA = Vector2.Distance(agentA.Position, agentB.Position);
                 float rad = agentA.Radius + agentB.Radius;
 
-                Vector2 perendicular_BA = Vector2.Perpendicular(new Vector2(direction_BA.x, direction_BA.z));
-                Vector3 bound_left = direction_BA * dist_BA + new Vector3(perendicular_BA.x, direction_BA.y, perendicular_BA.y) * rad;
-                Vector3 bound_right = direction_BA * dist_BA - new Vector3(perendicular_BA.x, direction_BA.y, perendicular_BA.y) * rad;
+                Vector2 perpendicular_BA = Vector2.Perpendicular(direction_BA);
+                Vector2 bound_left = direction_BA * dist_BA + perpendicular_BA * rad;
+                Vector2 bound_right = direction_BA * dist_BA - perpendicular_BA * rad;
 
                 var vo = new VelocityObstacle(transl_vB_vA, bound_left, bound_right, dist_BA, rad);
                 vos.Add(vo);
@@ -101,15 +139,22 @@ namespace vo
 
         private void DebugVos(Agent agent, List<VelocityObstacle> vos)
         {
-            VelocityObstacle vo = vos[0];
-            Debug.DrawLine(agent.Position, agent.Position + vo.bound_left, Color.blue);
-            Debug.DrawLine(agent.Position, agent.Position + vo.bound_right, Color.blue);
+            if (vos.Count > 0){
+                VelocityObstacle vo = vos[0];
+                Debug.DrawLine(Vec2To3(agent.Position), Vec2To3(agent.Position + vo.bound_left), Color.magenta);
+                Debug.DrawLine(Vec2To3(agent.Position), Vec2To3(agent.Position + vo.bound_right), Color.magenta);
+            }
         }
 
         private void DebugAgent(Agent agent)
         {
-            Debug.DrawLine(agent.Position, agent.Position + agent.Velocity.normalized * agent.Radius, Color.red);
-            Debug.DrawLine(agent.Position, agent.Position - agent.Velocity.normalized * agent.Radius, Color.red);
+            Debug.DrawLine(Vec2To3(agent.Position), Vec2To3(agent.Position + agent.Velocity.normalized * agent.Radius), Color.red);
+            Debug.DrawLine(Vec2To3(agent.Position), Vec2To3(agent.Position - agent.Velocity.normalized * agent.Radius), Color.red);
+        }
+
+        private Vector3 Vec2To3(Vector2 vec)
+        {
+            return new Vector3(vec.x, 0f, vec.y);
         }
     }
 }

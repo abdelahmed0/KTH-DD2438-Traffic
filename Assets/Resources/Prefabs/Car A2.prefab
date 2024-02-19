@@ -105,7 +105,6 @@ MonoBehaviour:
   allowReversing: 0
   smoothPath: 0
   k_p: 2
-  k_i: 0.1
   k_d: 1
   nodeDistThreshold: 0.2
   drawDebug: 0

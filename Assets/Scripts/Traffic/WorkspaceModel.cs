@@ -4,13 +4,13 @@ namespace vo
 {
     public class VelocityObstacle
     {
-        public Vector3 transl_vB_vA;
-        public Vector3 bound_left;
-        public Vector3 bound_right;
+        public Vector2 transl_vB_vA;
+        public Vector2 bound_left;
+        public Vector2 bound_right;
         public float dist_BA;
         public float rad;
 
-        public VelocityObstacle(Vector3 transl_vB_vA, Vector3 bound_left, Vector3 bound_right, float dist_BA, float rad)
+        public VelocityObstacle(Vector2 transl_vB_vA, Vector2 bound_left, Vector2 bound_right, float dist_BA, float rad)
         {
             this.transl_vB_vA = transl_vB_vA;
             this.bound_left = bound_left;
@@ -22,12 +22,12 @@ namespace vo
 
     public class Agent
     {
-        public Vector3 Position;
-        public Vector3 Velocity;
-        public Vector3 DesiredVelocity;
+        public Vector2 Position;
+        public Vector2 Velocity;
+        public Vector2 DesiredVelocity;
         public float Radius;
 
-        public Agent(Vector3 position, Vector3 velocity, Vector3 desiredVelocity, float radius)
+        public Agent(Vector2 position, Vector2 velocity, Vector2 desiredVelocity, float radius)
         {
             Position = position;
             Velocity = velocity;
