@@ -226,16 +226,35 @@ namespace aStar
             
             // Check if path to node is blocked
             Vector3 direction = (nextGlobal - currentGlobal).normalized;
-            var orientation = fixedOrientation ? Quaternion.Euler(Vector3.forward) : Quaternion.FromToRotation(Vector3.forward, direction);
-            bool hit = Physics.BoxCast(currentGlobal, // - collider.transform.localScale.z * direction, //* colliderResizeFactor,
+            Quaternion orientation;
+            bool hit;
+            if (fixedOrientation)
+            {
+                orientation = Quaternion.Euler(Vector3.forward);
+                // hit = Physics.Raycast(currentGlobal - collider.transform.localScale.z * direction * 0.4f,
+                //                       direction, 
+                //                       Vector3.Distance(currentGlobal, nextGlobal) 
+                //                       + collider.transform.localScale.z * 0.6f);
+                hit = Physics.BoxCast(currentGlobal - collider.transform.localScale.z * direction * 0.4f,
                                         colliderResizeFactor * collider.transform.localScale / 2f,
                                         direction,
                                         out var hitInfo,
                                         orientation,
-                                        globalStepDistance);// + collider.transform.localScale.z);// * colliderResizeFactor);
+                                        globalStepDistance + collider.transform.localScale.z * colliderResizeFactor);
+                // if (hit && hitInfo.collider.Equals(collider)) // Prevent hitting own collider
+                //     return true;
+            } else {
+                orientation = Quaternion.FromToRotation(Vector3.forward, direction);
+                hit = Physics.BoxCast(currentGlobal, // - collider.transform.localScale.z * direction, //* colliderResizeFactor,
+                                        colliderResizeFactor * collider.transform.localScale / 2f,
+                                        direction,
+                                        out var hitInfo,
+                                        orientation,
+                                        globalStepDistance);
+                if (hit && hitInfo.collider.Equals(collider)) // Prevent hitting own collider
+                    return true;
+            }
             
-            if (hit && hitInfo.collider.Equals(collider)) // Prevent hitting own collider
-                return true;
                 
             // if (hit)
             //     ExtDebug.DrawBoxCastOnHit(currentGlobal,// - collider.transform.localScale.z * direction * colliderResizeFactor,// - collider.transform.localScale.z * direction * colliderResizeFactor,

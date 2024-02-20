@@ -80,12 +80,12 @@ public class AIP1TrafficCar : MonoBehaviour
 
         nodePath = smoothPath ? pathFinder.SmoothPath(nodePath) : nodePath;
 
-        // Vector3 old_wp = localStart;
-        // foreach (var wp in nodePath)
-        // {
-        //     Debug.DrawLine(m_ObstacleMap.mapGrid.LocalToWorld(old_wp), m_ObstacleMap.mapGrid.LocalToWorld(wp.LocalPosition), Color.magenta, 1000f);
-        //     old_wp = wp.LocalPosition;
-        // }
+        Vector3 old_wp = localStart;
+        foreach (var wp in nodePath)
+        {
+            Debug.DrawLine(m_ObstacleMap.mapGrid.LocalToWorld(old_wp), m_ObstacleMap.mapGrid.LocalToWorld(wp.LocalPosition), Color.green, 4f);
+            old_wp = wp.LocalPosition;
+        }
 
         // Initialize velocity obstacles for traffic
         agent = new Agent(Vec3To2(transform.position), Vec3To2(my_rigidbody.velocity), Vec3To2(targetVelocity), m_Collider.transform.localScale.z * colliderResizeFactor);
@@ -99,6 +99,11 @@ public class AIP1TrafficCar : MonoBehaviour
         {
             return;
         }
+        // TODO: Car hybrid A* boxcast fix
+        // TODO: Better velocity obstacles. Truncate cones or use RVOs.
+        // TODO: Consider static obstacles as well in avoidance
+        // TODO: Improved VO visualization?
+        // TODO: Car stuck timer?
 
         AStarNode target = nodePath[currentNodeIdx];
         AStarNode nextTarget = nodePath[Math.Min(currentNodeIdx + 1, nodePath.Count-1)];
@@ -125,7 +130,7 @@ public class AIP1TrafficCar : MonoBehaviour
         PdControll(targetPosition * (1f - avoidanceWeight) + avoidancePosition * avoidanceWeight,
                    targetVelocity * (1f - avoidanceWeight) + avoidanceVelocity * avoidanceWeight);
 
-        Debug.DrawLine(transform.position, targetPosition, Color.black);
+        Debug.DrawLine(transform.position, targetPosition, Color.magenta);
         Debug.DrawLine(transform.position, transform.position + my_rigidbody.velocity, Color.white);
         Debug.DrawLine(transform.position, transform.position + targetVelocity, Color.blue);
         Debug.DrawLine(transform.position, transform.position + avoidanceVelocity, Color.red);
@@ -137,33 +142,32 @@ public class AIP1TrafficCar : MonoBehaviour
         Vector3 current_position = transform.position;
         
         // Number nodes to lookahead to see if path is turning
-        int lookahead = 10;
-
-        // A threshold when we consider a checkpoint reached
-        float reach_threshold = 9.5f;
-
+        int lookahead = 2;
         int lookahead_index = Mathf.Min(currentNodeIdx + lookahead, nodePath.Count - 1);
 
         Vector3 current_direction = transform.forward;
-        Vector3 direction_to_lookahead_index = current_position - nodePath[lookahead_index].GetGlobalPosition();
+        Vector3 lookahead_position = nodePath[lookahead_index].GetGlobalPosition();
+        Vector3 direction_to_lookahead_index = current_position - lookahead_position;
+
         float angle_between_vectors = Vector3.Angle(current_direction.normalized, direction_to_lookahead_index.normalized);
+
+        // A threshold when we consider a checkpoint reached
+        float reach_threshold = 8f;
 
         reach_threshold *= angle_between_vectors / 180.0f;
 
-        this.targetVelocity = targetVelocity;
 
         Vector3 pos_error = targetPosition - current_position;
-        Vector3 vel_error = this.targetVelocity - my_rigidbody.velocity;
+        Vector3 vel_error = targetVelocity - my_rigidbody.velocity;
         Vector3 desired_acceleration = (k_p * pos_error + k_d * vel_error).normalized; // normalize to receive steering and accel values between (-1, 1)
 
         float steering = Vector3.Dot(desired_acceleration, transform.right);
         float acceleration = Vector3.Dot(desired_acceleration, transform.forward);
 
         float distance = Vector3.Distance(targetPosition, current_position);
-        if (distance < reach_threshold)
+        if (distance < reach_threshold || distance < 2f)
         {
-            currentNodeIdx = Mathf.Min(currentNodeIdx + 1, nodePath.Count - 1);;
-            if (currentNodeIdx >= nodePath.Count) return;
+            currentNodeIdx = Mathf.Min(currentNodeIdx + 1, nodePath.Count - 1);
             targetPosition = nodePath[currentNodeIdx].GetGlobalPosition();
         }
 

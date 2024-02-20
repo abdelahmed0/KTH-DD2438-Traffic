@@ -76,8 +76,8 @@ namespace vo
                             break;
                         }
                     }
-                    
                     if (suitable && Vector2.Distance(sampleVelocity, agent.Velocity) < Vector2.Distance(newVelocity, agent.Velocity))
+                    // if (suitable && Vector2.Distance(sampleVelocity, agent.DesiredVelocity) < Vector2.Distance(newVelocity, agent.DesiredVelocity))
                     {
                         newVelocity = sampleVelocity;
                     }
@@ -94,8 +94,9 @@ namespace vo
             List<VelocityObstacle> vos = new();
             
             // Exclude self and really slow agents
-            foreach (Agent agentB in agents.Where(b => b != agentA 
+            foreach (Agent agentB in agents.Where(b => b != agentA
                                                          && b.Velocity.magnitude > 0.1f))
+                                                        //  && Vector2.Distance(agentA.Position, b.Position) < 30f))
             {
                 Vector2 transl_vB_vA = agentB.Velocity - agentA.Velocity;
                 Vector2 direction_BA = (agentB.Position - agentA.Position).normalized;
