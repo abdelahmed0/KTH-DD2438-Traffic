@@ -270,3 +270,10 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: cd8f88dbef86049759c7f8b36661fe22, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  colliderResizeFactor: 2
+  numberSteeringAngles: 5
+  allowReversing: 1
+  smoothPath: 1
+  k_p: 2
+  k_d: 1
+  drawDebug: 0

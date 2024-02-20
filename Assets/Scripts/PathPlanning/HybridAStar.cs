@@ -20,8 +20,7 @@ namespace aStar
         private readonly float stepDistance;
         private readonly Grid grid;
         private readonly ObstacleMap obstacleMap;
-        private readonly BoxCollider collider;
-        private readonly float vehicleLength;
+        private readonly Collider collider;
         private readonly bool fixedOrientation;
         private readonly float maxSteeringAngle;
         private readonly bool allowReversing = false;
@@ -33,14 +32,12 @@ namespace aStar
 
         public Dictionary<Vector2Int, float> flowField = null;
 
-        public HybridAStarGenerator(Grid grid, ObstacleMap obstacleMap, float maxSteeringAngle, BoxCollider collider, float colliderResizeFactor, bool fixedOrientation, bool allowReversing, float backwardsPenalty)
+        public HybridAStarGenerator(Grid grid, ObstacleMap obstacleMap, float maxSteeringAngle, Collider collider, float colliderResizeFactor, bool fixedOrientation, bool allowReversing, float backwardsPenalty)
         {
             this.grid = grid;
             this.obstacleMap = obstacleMap;
             this.collider = collider;
             this.colliderResizeFactor = colliderResizeFactor;
-            vehicleLength = grid.WorldToLocal(collider.transform.localScale).z;
-            // Debug.Log("Collider size: " + grid.WorldToLocal(collider.size));
 
             // Incorporate cellSize and cellGap to prevent steps from landing in the same cell they started in
             Vector3 cellSize = grid.cellSize;

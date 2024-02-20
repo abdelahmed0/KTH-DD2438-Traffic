@@ -92,7 +92,10 @@ namespace vo
         private List<VelocityObstacle> CalculateVelocityObstacles(Agent agentA)
         {
             List<VelocityObstacle> vos = new();
-            foreach (Agent agentB in agents.Where(b => b != agentA))
+            
+            // Exclude self and really slow agents
+            foreach (Agent agentB in agents.Where(b => b != agentA 
+                                                         && b.Velocity.magnitude > 0.1f))
             {
                 Vector2 transl_vB_vA = agentB.Velocity - agentA.Velocity;
                 Vector2 direction_BA = (agentB.Position - agentA.Position).normalized;
