@@ -35,8 +35,8 @@ public class AIP1TrafficCar : MonoBehaviour
 
     private Agent agent;
 
-    private static VOManager voManager = new();
-    private static bool mapResized = false;
+    private static VOManager voManager;
+    private static bool StaticInitDone = false;
 
     private void Start()
     {
@@ -49,8 +49,16 @@ public class AIP1TrafficCar : MonoBehaviour
         m_ObstacleMap = m_ObstacleMapManager.ObstacleMap;
         m_Collider = gameObject.transform.Find("Colliders/ColliderBottom").gameObject.GetComponent<BoxCollider>();
 
-        if (!mapResized)
+        if (!StaticInitDone)
         {
+            voManager = new()
+            {
+                maxSpeed = m_Car.MaxSpeed, 
+                maxAngle = m_Car.m_MaximumSteerAngle,
+                allowReversing = allowReversing,
+                maxAccelaration = 6f
+            };
+
             // Rescale grid to have square shaped grid cells with size proportional to the car length
             float gridCellSize = m_Collider.transform.localScale.z;
             Vector3 gridScale = m_ObstacleMap.mapGrid.transform.localScale;
@@ -62,7 +70,7 @@ public class AIP1TrafficCar : MonoBehaviour
             m_MapManager.Initialize();
             m_ObstacleMapManager.Initialize();
             m_ObstacleMap = m_ObstacleMapManager.ObstacleMap;
-            mapResized = true;
+            StaticInitDone = true;
         }
 
         var localStart = m_ObstacleMap.mapGrid.WorldToLocal(transform.position);
@@ -99,11 +107,12 @@ public class AIP1TrafficCar : MonoBehaviour
         {
             return;
         }
-        // TODO: Car hybrid A* boxcast fix
-        // TODO: Better velocity obstacles. Truncate cones or use RVOs.
+
+        // TODO: Fix current VO bugs
+        // TODO: Better velocity obstacles. Use RVO/HRVO.
+        // TODO: Car hybrid A* boxcast fix, Use group 21 obstacle map
         // TODO: Consider static obstacles as well in avoidance
-        // TODO: Improved VO visualization?
-        // TODO: Car stuck timer?
+        // TODO: Vehicle stuck timer?
 
         AStarNode target = nodePath[currentNodeIdx];
         AStarNode nextTarget = nodePath[Math.Min(currentNodeIdx + 1, nodePath.Count-1)];
@@ -116,9 +125,7 @@ public class AIP1TrafficCar : MonoBehaviour
         float avoidanceRadius = colliderResizeFactor * m_Collider.transform.localScale.z;
         agent.Update(new Agent(Vec3To2(transform.position), Vec3To2(my_rigidbody.velocity), Vec3To2(targetVelocity), avoidanceRadius));
 
-        voManager.CalculateNewVelocity(agent, m_Car.MaxSpeed, 
-            maxAngle:m_Car.m_MaximumSteerAngle, 
-            allowReversing:true,
+        voManager.CalculateNewVelocity(agent,
             out bool isColliding, 
             out Vector2 newVelocity);
 

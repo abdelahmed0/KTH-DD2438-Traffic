@@ -33,8 +33,8 @@ public class AIP2TrafficDrone : MonoBehaviour
 
     private Agent agent;
 
-    private static VOManager voManager = new();
-    private static bool mapResized = false;
+    private static VOManager voManager;
+    private static bool StaticInitDone = false;
 
     private void Start()
     {
@@ -47,8 +47,16 @@ public class AIP2TrafficDrone : MonoBehaviour
         m_ObstacleMapManager = FindObjectOfType<ObstacleMapManager>();
         m_ObstacleMap = m_ObstacleMapManager.ObstacleMap;
 
-        if (!mapResized)
+        if (!StaticInitDone)
         {
+            voManager = new()
+            {
+                maxSpeed = m_Drone.max_speed,
+                maxAngle = 40f,
+                allowReversing = allowReversing,
+                maxAccelaration = m_Drone.max_acceleration
+            };
+
             // Rescale grid to have square shaped grid cells with size proportional to drone size
             float gridCellSize = 4f * m_Collider.height;
             Vector3 gridScale = m_ObstacleMap.mapGrid.transform.localScale;
@@ -60,7 +68,7 @@ public class AIP2TrafficDrone : MonoBehaviour
             m_MapManager.Initialize();
             m_ObstacleMapManager.Initialize();
             m_ObstacleMap = m_ObstacleMapManager.ObstacleMap;
-            mapResized = true;
+            StaticInitDone = true;
         }
 
         var localStart = m_ObstacleMap.mapGrid.WorldToLocal(transform.position);
@@ -101,12 +109,10 @@ public class AIP2TrafficDrone : MonoBehaviour
         CalculateTargets(out Vector3 targetPosition, out Vector3 targetVelocity);
 
         // Apply weighted avoidance via velocity obstacles
-        float avoidanceRadius = colliderResizeFactor * m_Collider.radius;
+        float avoidanceRadius = 4f * m_Collider.radius;
         agent.Update(new Agent(Vec3To2(transform.position), Vec3To2(my_rigidbody.velocity), Vec3To2(targetVelocity), avoidanceRadius));
 
-        voManager.CalculateNewVelocity(agent, m_Drone.max_speed, 
-            maxAngle:40f, 
-            allowReversing:true,
+        voManager.CalculateNewVelocity(agent,
             out bool isColliding, 
             out Vector2 newVelocity);
 
@@ -119,9 +125,9 @@ public class AIP2TrafficDrone : MonoBehaviour
                    targetVelocity * (1f - avoidanceWeight) + avoidanceVelocity * avoidanceWeight);
 
         Debug.DrawLine(transform.position, targetPosition, Color.magenta);
-        Debug.DrawLine(transform.position, transform.position + my_rigidbody.velocity, Color.white);
+        // Debug.DrawLine(transform.position, transform.position + my_rigidbody.velocity, Color.white);
         Debug.DrawLine(transform.position, transform.position + targetVelocity, Color.blue);
-        Debug.DrawLine(transform.position, transform.position + avoidanceVelocity, Color.red);
+        Debug.DrawLine(transform.position, transform.position + avoidanceVelocity, Color.green);
         // Debug.DrawLine(transform.position, avoidancePosition, Color.red);
     }
 
@@ -140,7 +146,7 @@ public class AIP2TrafficDrone : MonoBehaviour
         float angle_between_vectors = Vector3.Angle(current_direction.normalized, direction_to_lookahead_index.normalized);
 
         // A threshold when we consider a checkpoint reached
-        float reach_threshold = 6f;
+        float reach_threshold = 10f;
 
         reach_threshold *= angle_between_vectors / 180.0f;
 
@@ -173,6 +179,10 @@ public class AIP2TrafficDrone : MonoBehaviour
         }
 
         m_Drone.Move(steering, acceleration);
+    }
+
+    private void OnDrawGizmos() {
+        voManager.DebugDraw(agent);
     }
 
     private void CalculateTargets(out Vector3 targetPosition, out Vector3 targetVelocity)
