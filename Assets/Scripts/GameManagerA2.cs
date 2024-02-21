@@ -53,10 +53,11 @@ public class GameManagerA2 : AbstractGameManager
             vehicleToGoalMapping.ToList().ForEach(pair => pair.Value.CheckAchieved(pair.Key));
         }
 
-        if (!isComplete & goals.ToList().TrueForAll(goal => goal.IsAchieved()))
+        if (!isComplete)
         {
-            isComplete = true;
             completionTime = goals.Max(goals => goals.CurrentTime());
         }
+
+        isComplete = goals.ToList().TrueForAll(goal => goal.IsAchieved());
     }
 }
