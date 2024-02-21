@@ -126,6 +126,7 @@ public class AIP1TrafficCar : MonoBehaviour
         agent.Update(new Agent(Vec3To2(transform.position), Vec3To2(my_rigidbody.velocity), Vec3To2(targetVelocity), avoidanceRadius));
 
         voManager.CalculateNewVelocity(agent,
+            Time.fixedDeltaTime,
             out bool isColliding, 
             out Vector2 newVelocity);
 

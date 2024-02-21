@@ -109,10 +109,11 @@ public class AIP2TrafficDrone : MonoBehaviour
         CalculateTargets(out Vector3 targetPosition, out Vector3 targetVelocity);
 
         // Apply weighted avoidance via velocity obstacles
-        float avoidanceRadius = 4f * m_Collider.radius;
+        float avoidanceRadius = m_Collider.radius;
         agent.Update(new Agent(Vec3To2(transform.position), Vec3To2(my_rigidbody.velocity), Vec3To2(targetVelocity), avoidanceRadius));
 
         voManager.CalculateNewVelocity(agent,
+            Time.fixedDeltaTime,
             out bool isColliding, 
             out Vector2 newVelocity);
 

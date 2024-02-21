@@ -35,7 +35,7 @@ namespace vo
         }
 
         // Calculate new velocity for the agent to avoid multiple obstacles, always go right of obstacles
-        public void CalculateNewVelocity(Agent agent, out bool isColliding, out Vector2 newVelocity) // maxAngle in degrees
+        public void CalculateNewVelocity(Agent agent, float deltaTime, out bool isColliding, out Vector2 newVelocity) // maxAngle in degrees
         {
             List<VelocityObstacle> vos = CalculateVelocityObstacles(agent);
             isColliding = false;
@@ -63,17 +63,19 @@ namespace vo
 
             newVelocity = Vector2.positiveInfinity;
             float angleStep = 5;
-            float speedStep = maxSpeed / 5f;
 
             // Sample in VO space around wanted velocity
             for (float alpha = -maxAngle; alpha <= maxAngle; alpha += angleStep)
             {
-                // TODO: account for limited accelaration
-                for (float speed = allowReversing ? -maxSpeed : 0f; speed <= maxSpeed; speed += speedStep)
+                // Account for limited accelaration and deccelaration
+                float lowerSpeedBound = Mathf.Clamp(agent.Velocity.magnitude - maxAccelaration * deltaTime, allowReversing ? -maxSpeed : 0f, maxSpeed);
+                float upperSpeedBound = Mathf.Clamp(agent.Velocity.magnitude + maxAccelaration * deltaTime, allowReversing ? -maxSpeed : 0f, maxSpeed);
+
+                float speedStep = (upperSpeedBound - lowerSpeedBound) / 5f;
+                for (float speed = lowerSpeedBound; speed <= upperSpeedBound; speed += speedStep)
                 {
                     bool suitable = true;
                     Vector2 sampleVelocity = Quaternion.Euler(0, 0, alpha) * agent.Velocity.normalized * speed;
-                    
 
                     foreach (VelocityObstacle vo in vos)
                     {
@@ -89,7 +91,7 @@ namespace vo
                             break;
                         }
                     }
-                    // if (suitable && Vector2.Distance(sampleVelocity, agent.Velocity) < Vector2.Distance(newVelocity, agent.Velocity))
+                    
                     if (suitable && Vector2.Distance(sampleVelocity, agent.DesiredVelocity) < Vector2.Distance(newVelocity, agent.DesiredVelocity))
                     {
                         newVelocity = sampleVelocity;
