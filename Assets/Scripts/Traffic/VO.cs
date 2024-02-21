@@ -34,48 +34,28 @@ namespace vo
             agents.Find(a => a == toUpdate).Update(toCopy);
         }
 
-        // Calculate new velocity for the agent to avoid multiple obstacles, always go right of obstacles
-        public void CalculateNewVelocity(Agent agent, float deltaTime, out bool isColliding, out Vector2 newVelocity) // maxAngle in degrees
+        public void CalculateNewVelocity(Agent agent, float deltaTime, out bool isColliding, out Vector2 newVelocity)
         {
             List<VelocityObstacle> vos = CalculateVelocityObstacles(agent);
             isColliding = false;
 
-            foreach (VelocityObstacle vo in vos)
-            {
-                Vector2 velocityInVoSpace = vo.transl_vB_vA;
-                float theta = Vector2.Angle(Vector2.right, velocityInVoSpace);
-
-                float thetaRight = Vector2.Angle(vo.bound_right, Vector2.right);
-                float thetaLeft = Vector2.Angle(vo.bound_left, Vector2.right);
-                
-                if (InBetween(thetaRight, theta, thetaLeft))
-                {
-                    isColliding = true;
-                    break;
-                }
-            }
-
-            if (!isColliding)
-            {
-                newVelocity = Vector2.zero;
-                return;
-            }
-
             newVelocity = Vector2.positiveInfinity;
+            float minPenalty = float.MaxValue;
             float angleStep = 5;
+            float w = 1f; // Aggressiveness factor, can vary among agents
 
             // Sample in VO space around wanted velocity
             for (float alpha = -maxAngle; alpha <= maxAngle; alpha += angleStep)
             {
-                // Account for limited accelaration and deccelaration
                 float lowerSpeedBound = Mathf.Clamp(agent.Velocity.magnitude - maxAccelaration * deltaTime, allowReversing ? -maxSpeed : 0f, maxSpeed);
                 float upperSpeedBound = Mathf.Clamp(agent.Velocity.magnitude + maxAccelaration * deltaTime, allowReversing ? -maxSpeed : 0f, maxSpeed);
 
                 float speedStep = (upperSpeedBound - lowerSpeedBound) / 5f;
                 for (float speed = lowerSpeedBound; speed <= upperSpeedBound; speed += speedStep)
                 {
-                    bool suitable = true;
                     Vector2 sampleVelocity = Quaternion.Euler(0, 0, alpha) * agent.Velocity.normalized * speed;
+                    float penalty = Vector2.Distance(sampleVelocity, agent.DesiredVelocity);
+                    float minTimeToCollision = float.MaxValue;
 
                     foreach (VelocityObstacle vo in vos)
                     {
@@ -87,16 +67,28 @@ namespace vo
                         
                         if (InBetween(thetaRight, theta, thetaLeft))
                         {
-                            suitable = false;
-                            break;
+                            float timeToCollision = vo.dist_BA / velocityInVoSpace.magnitude;
+                            minTimeToCollision = Mathf.Min(minTimeToCollision, timeToCollision);
                         }
                     }
-                    
-                    if (suitable && Vector2.Distance(sampleVelocity, agent.DesiredVelocity) < Vector2.Distance(newVelocity, agent.DesiredVelocity))
+
+                    if (minTimeToCollision < float.MaxValue)
                     {
+                        penalty += w / minTimeToCollision; // Apply penalty based on time to collision
+                    }
+
+                    if (penalty < minPenalty)
+                    {
+                        minPenalty = penalty;
                         newVelocity = sampleVelocity;
+                        isColliding = minTimeToCollision < TimeLookAhead; // Update collision status based on closest obstacle
                     }
                 }
+            }
+
+            if (newVelocity == Vector2.positiveInfinity)
+            {
+                newVelocity = agent.DesiredVelocity; // Fallback to desired velocity if no suitable velocity found
             }
         }
 
@@ -115,19 +107,12 @@ namespace vo
                 float dist_BA = Vector2.Distance(agentA.Position, agentB.Position);
                 float rad = agentA.Radius + agentB.Radius;
 
-                // Calculate the time it would take for agentA to reach agentB
-                float timeToCollision = dist_BA / transl_vB_vA.magnitude;
+                Vector2 perpendicular_BA = Vector2.Perpendicular(direction_BA);
+                Vector2 bound_left = direction_BA * dist_BA + perpendicular_BA * rad;
+                Vector2 bound_right = direction_BA * dist_BA - perpendicular_BA * rad;
 
-                // Check if the collision would occur within time threshold
-                if (timeToCollision <= TimeLookAhead)
-                {
-                    Vector2 perpendicular_BA = Vector2.Perpendicular(direction_BA);
-                    Vector2 bound_left = direction_BA * dist_BA + perpendicular_BA * rad;
-                    Vector2 bound_right = direction_BA * dist_BA - perpendicular_BA * rad;
-
-                    var vo = new VelocityObstacle(agentA, agentB, transl_vB_vA, bound_left, bound_right, dist_BA, rad);
-                    vos.Add(vo);
-                }
+                var vo = new VelocityObstacle(agentA, agentB, transl_vB_vA, bound_left, bound_right, dist_BA, rad);
+                vos.Add(vo);
             }
             return vos;
         }
@@ -173,8 +158,8 @@ namespace vo
                     Gizmos.color = Color.red;
 
                     Vector2 perpendicular_VB = Vector2.Perpendicular(vo.agentB.Velocity).normalized;
-                    Vector2 boundLeftWorld = vo.agentB.Position + vo.agentB.Velocity.normalized * vo.dist_BA + perpendicular_VB * vo.rad;
-                    Vector2 boundRightWorld = vo.agentB.Position + vo.agentB.Velocity.normalized * vo.dist_BA - perpendicular_VB * vo.rad;
+                    Vector2 boundLeftWorld = vo.agentB.Position + (vo.agentB.Velocity.normalized * vo.dist_BA + perpendicular_VB * vo.rad).normalized * vo.agentB.Velocity.magnitude * TimeLookAhead;
+                    Vector2 boundRightWorld = vo.agentB.Position + (vo.agentB.Velocity.normalized * vo.dist_BA - perpendicular_VB * vo.rad).normalized * vo.agentB.Velocity.magnitude * TimeLookAhead;
 
                     Gizmos.DrawLine(Vec2To3(vo.agentB.Position), Vec2To3(boundLeftWorld));
                     Gizmos.DrawLine(Vec2To3(vo.agentB.Position), Vec2To3(boundRightWorld));
