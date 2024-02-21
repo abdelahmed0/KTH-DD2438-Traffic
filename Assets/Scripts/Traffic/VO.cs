@@ -6,7 +6,11 @@ namespace vo
 {
     public class VOManager
     {
+        public static bool DebugOn = false;
+        private const float TimeLookAhead = 4f; // Functions as a truncation of the VOs
+
         private List<Agent> agents;
+        // private Dictionary<Agent, List<VelocityObstacle>> voMap = null; // TODO: Change to Monobehaviour and use gizmos
 
         public VOManager()
         {
@@ -31,7 +35,7 @@ namespace vo
 
             foreach (VelocityObstacle vo in vos)
             {
-                Vector2 velocityInVoSpace = agent.Velocity - vo.transl_vB_vA - agent.Velocity;
+                Vector2 velocityInVoSpace = vo.transl_vB_vA;
                 float theta = Vector2.Angle(Vector2.right, velocityInVoSpace);
 
                 float thetaRight = Vector2.Angle(vo.bound_right, Vector2.right);
@@ -88,14 +92,14 @@ namespace vo
             // DebugAgent(agent);
         }
 
-        // Calculate velocity obstacles for an agent
+        // Calculate velocity obstacles for an agent if collision would happen in given time threshold 
         private List<VelocityObstacle> CalculateVelocityObstacles(Agent agentA)
         {
             List<VelocityObstacle> vos = new();
             
-            // Exclude self and really slow agents
-            foreach (Agent agentB in agents.Where(b => b != agentA
-                                                         && b.Velocity.magnitude > 0.1f))
+            // Exclude self
+            foreach (Agent agentB in agents.Where(b => b != agentA))
+                                                        //  && b.Velocity.magnitude > 0.1f))
                                                         //  && Vector2.Distance(agentA.Position, b.Position) < 30f))
             {
                 Vector2 transl_vB_vA = agentB.Velocity - agentA.Velocity;
@@ -103,12 +107,19 @@ namespace vo
                 float dist_BA = Vector2.Distance(agentA.Position, agentB.Position);
                 float rad = agentA.Radius + agentB.Radius;
 
-                Vector2 perpendicular_BA = Vector2.Perpendicular(direction_BA);
-                Vector2 bound_left = direction_BA * dist_BA + perpendicular_BA * rad;
-                Vector2 bound_right = direction_BA * dist_BA - perpendicular_BA * rad;
+                // Calculate the time it would take for agentA to reach agentB
+                float timeToCollision = dist_BA / transl_vB_vA.magnitude;
 
-                var vo = new VelocityObstacle(transl_vB_vA, bound_left, bound_right, dist_BA, rad);
-                vos.Add(vo);
+                // Check if the collision would occur within time threshold
+                if (timeToCollision <= TimeLookAhead)
+                {
+                    Vector2 perpendicular_BA = Vector2.Perpendicular(direction_BA);
+                    Vector2 bound_left = direction_BA * dist_BA + perpendicular_BA * rad;
+                    Vector2 bound_right = direction_BA * dist_BA - perpendicular_BA * rad;
+
+                    var vo = new VelocityObstacle(transl_vB_vA, bound_left, bound_right, dist_BA, rad);
+                    vos.Add(vo);
+                }
             }
             return vos;
         }
@@ -140,6 +151,17 @@ namespace vo
             while (angle > 360) angle -= 360;
             return angle;
         }
+
+
+        // private void OnDrawGizmos() {
+        //     if (!DebugOn)
+        //         return;
+
+        //     foreach (var agent in agents)
+        //     {
+        //         Gizmos.DrawSphere(Vec2To3(agent.Position), agent.Radius);
+        //     }
+        // }
 
         private void DebugVos(Agent agent, List<VelocityObstacle> vos)
         {
