@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Linq;
+using PathPlanning;
 using UnityEngine;
 
 namespace vo
@@ -9,15 +10,16 @@ namespace vo
         public static bool DebugOn = false;
 
         public const float TimeLookAhead = 4f; // Functions as a truncation of the VOs
+        public const float st_TimeLookaHead = 3f; // Static obstacle collision time lookahead
         public float maxSpeed = 50f;
         public float maxAngle = 30f;
         public float maxAccelaration = 5f;
         public bool allowReversing = false;
+        public CollisionDetector Detector = null;
 
         private const float RvoAlpha = 0.5f; // VO apex is translated by alpha from velocity B to velocity A
 
         private List<Agent> agents;
-        // private Dictionary<Agent, List<VelocityObstacle>> voMap = null; // TODO: Change to Monobehaviour and use gizmos
 
         public VOManager()
         {
@@ -36,13 +38,13 @@ namespace vo
 
         public void CalculateNewVelocity(Agent agent, float deltaTime, out bool isColliding, out Vector2 newVelocity)
         {
-            List<VelocityObstacle> vos = CalculateVelocityObstacles(agent);
+            List<VelocityObstacle> vos = CalculateObstacles(agent);
             isColliding = false;
 
             newVelocity = Vector2.positiveInfinity;
             float minPenalty = float.MaxValue;
             float angleStep = 5;
-            float w = 1f; // Aggressiveness factor, can vary among agents
+            float wi = 1f; // Aggressiveness factor, can vary among agents
 
             // Sample in VO space around wanted velocity
             for (float alpha = -maxAngle; alpha <= maxAngle; alpha += angleStep)
@@ -56,7 +58,15 @@ namespace vo
                     Vector2 sampleVelocity = Quaternion.Euler(0, 0, alpha) * agent.Velocity.normalized * speed;
                     float penalty = Vector2.Distance(sampleVelocity, agent.DesiredVelocity);
                     float minTimeToCollision = float.MaxValue;
-
+                    
+                    // Check static obstacles
+                    if (Detector.LineCollision(agent.Position, agent.Position + sampleVelocity.normalized * st_TimeLookaHead))
+                    {
+                        // Debug.DrawLine(Vec2To3(agent.Position), Vec2To3(agent.Position + sampleVelocity.normalized * st_TimeLookaHead), Color.magenta);
+                        continue;
+                    }
+                    
+                    // Check dynamic obstacles
                     foreach (VelocityObstacle vo in vos)
                     {
                         Vector2 velocityInVoSpace = sampleVelocity - vo.transl_vB_vA - agent.Velocity;
@@ -67,14 +77,16 @@ namespace vo
                         
                         if (InBetween(thetaRight, theta, thetaLeft))
                         {
-                            float timeToCollision = vo.dist_BA / velocityInVoSpace.magnitude;
+                            // For static obstacles, adjust how time to collision is calculated
+                            float timeToCollision = (vo.dist_BA - vo.rad) / velocityInVoSpace.magnitude;
+                            
                             minTimeToCollision = Mathf.Min(minTimeToCollision, timeToCollision);
                         }
                     }
 
                     if (minTimeToCollision < float.MaxValue)
                     {
-                        penalty += w / minTimeToCollision; // Apply penalty based on time to collision
+                        penalty += wi / minTimeToCollision; // Apply penalty based on time to collision
                     }
 
                     if (penalty < minPenalty)
@@ -93,7 +105,7 @@ namespace vo
         }
 
         // Calculate velocity obstacles for an agent if collision would happen within the time threshold 
-        private List<VelocityObstacle> CalculateVelocityObstacles(Agent agentA)
+        private List<VelocityObstacle> CalculateObstacles(Agent agentA)
         {
             List<VelocityObstacle> vos = new();
             
@@ -101,7 +113,6 @@ namespace vo
             foreach (Agent agentB in agents.Where(b => b != agentA))
             {
                 Vector2 transl_vB_vA = (agentB.Velocity - agentA.Velocity) * RvoAlpha;
-                // Vector2 transl_vB_vA = agentB.Velocity - agentA.Velocity;
 
                 Vector2 direction_BA = (agentB.Position - agentA.Position).normalized;
                 float dist_BA = Vector2.Distance(agentA.Position, agentB.Position);
@@ -152,7 +163,7 @@ namespace vo
                 Gizmos.color = Color.green;
                 Gizmos.DrawSphere(Vec2To3(agent.Position), agent.Radius);
 
-                var vos = CalculateVelocityObstacles(agent);
+                var vos = CalculateObstacles(agent);
                 foreach (var vo in vos)
                 {
                     Gizmos.color = Color.red;

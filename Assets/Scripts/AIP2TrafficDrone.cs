@@ -34,7 +34,7 @@ public class AIP2TrafficDrone : MonoBehaviour
 
     private Agent agent;
 
-    private static VOManager voManager;
+    private static VOManager voManager = null;
     private static bool StaticInitDone = false;
     private static CollisionDetector m_Detector = null;
 
@@ -66,7 +66,7 @@ public class AIP2TrafficDrone : MonoBehaviour
             Debug.Log($"Grid rescaling: {sw.ElapsedMilliseconds} ms");
 
             sw.Restart();
-            m_Detector = new CollisionDetector(m_ObstacleMap, margin: 1f);
+            m_Detector = new CollisionDetector(m_ObstacleMap, margin: gridCellSize);
             Debug.Log($"Detector init: {sw.ElapsedMilliseconds} ms");
 
             // Init collision avoidance
@@ -102,16 +102,15 @@ public class AIP2TrafficDrone : MonoBehaviour
 
         nodePath = smoothPath ? pathFinder.SmoothPath(nodePath) : nodePath;
 
-        Vector3 old_wp = localStart;
-        foreach (var wp in nodePath)
-        {
-            Debug.DrawLine(m_ObstacleMap.mapGrid.LocalToWorld(old_wp), m_ObstacleMap.mapGrid.LocalToWorld(wp.LocalPosition), Color.green, 4f);
-            old_wp = wp.LocalPosition;
-        }
+        // Vector3 old_wp = localStart;
+        // foreach (var wp in nodePath)
+        // {
+        //     Debug.DrawLine(m_ObstacleMap.mapGrid.LocalToWorld(old_wp), m_ObstacleMap.mapGrid.LocalToWorld(wp.LocalPosition), Color.green, 4f);
+        //     old_wp = wp.LocalPosition;
+        // }
 
         // Initialize velocity obstacles for traffic
-        CalculateTargets(out Vector3 _, out Vector3 targetVelocity);
-        agent = new Agent(Vec3To2(transform.position), Vec3To2(my_rigidbody.velocity), Vec3To2(targetVelocity), m_Collider.radius * colliderResizeFactor);
+        agent = new Agent(Vec3To2(transform.position), Vec3To2(my_rigidbody.velocity), Vector3.zero, m_Collider.radius * colliderResizeFactor);
         voManager.AddAgent(agent);
     }
 
@@ -189,9 +188,8 @@ public class AIP2TrafficDrone : MonoBehaviour
             
             if (current_tracked_distance > potential_tracked_distance)
             {
-                // found a closer point, i, no need to keep looking
+                // found a closer point
                 currentNodeIdx = i;
-                break; 
             }
         }
 
@@ -201,7 +199,7 @@ public class AIP2TrafficDrone : MonoBehaviour
     private void OnDrawGizmos() {
         if (drawDebug)
         {
-            voManager.DebugDraw(agent);
+            voManager?.DebugDraw(agent);
             m_Detector?.DebugDrawBoundingBoxes();
         }
     }

@@ -69,7 +69,7 @@ public class AIP1TrafficCar : MonoBehaviour
             Debug.Log($"Grid rescaling: {sw.ElapsedMilliseconds} ms");
 
             sw.Restart();
-            m_Detector = new CollisionDetector(m_ObstacleMap, margin: 1f);
+            m_Detector = new CollisionDetector(m_ObstacleMap, margin: colliderResizeFactor * m_Collider.transform.localScale.x);
             Debug.Log($"Detector init: {sw.ElapsedMilliseconds} ms");
 
             // Init collision avoidance
@@ -108,7 +108,7 @@ public class AIP1TrafficCar : MonoBehaviour
         }
 
         // Initialize velocity obstacles for traffic
-        agent = new Agent(Vec3To2(transform.position), Vec3To2(my_rigidbody.velocity), Vec3To2(targetVelocity), m_Collider.transform.localScale.z * colliderResizeFactor);
+        agent = new Agent(Vec3To2(transform.position), Vec3To2(my_rigidbody.velocity), Vector3.zero, m_Collider.transform.localScale.z * colliderResizeFactor);
         voManager.AddAgent(agent);
     }
 
