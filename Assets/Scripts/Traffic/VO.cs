@@ -17,7 +17,7 @@ namespace vo
         public bool allowReversing = false;
         public CollisionDetector Detector = null;
 
-        private const float RvoAlpha = 0.5f; // VO apex is translated by alpha from velocity B to velocity A
+        private const float RvoAlpha = 1f; // RVO: VO apex is translated by alpha from velocity B to velocity A
 
         private List<Agent> agents;
 
@@ -36,9 +36,9 @@ namespace vo
             agents.Find(a => a == toUpdate).Update(toCopy);
         }
 
-        public void CalculateNewVelocity(Agent agent, float deltaTime, out bool isColliding, out Vector2 newVelocity)
+        public void CalculateNewRVOVelocity(Agent agent, float deltaTime, out bool isColliding, out Vector2 newVelocity)
         {
-            List<VelocityObstacle> vos = CalculateObstacles(agent);
+            List<VelocityObstacle> vos = CalculateVelocityObstacles(agent);
             isColliding = false;
 
             newVelocity = Vector2.positiveInfinity;
@@ -69,16 +69,10 @@ namespace vo
                     // Check dynamic obstacles
                     foreach (VelocityObstacle vo in vos)
                     {
-                        Vector2 velocityInVoSpace = sampleVelocity - vo.transl_vB_vA - agent.Velocity;
-                        float theta = Vector2.Angle(Vector2.right, velocityInVoSpace);
-
-                        float thetaRight = Vector2.Angle(vo.bound_right, Vector2.right);
-                        float thetaLeft = Vector2.Angle(vo.bound_left, Vector2.right);
-                        
-                        if (InBetween(thetaRight, theta, thetaLeft))
+                        if (IsInVO(sampleVelocity, vo))
                         {
-                            // For static obstacles, adjust how time to collision is calculated
-                            float timeToCollision = (vo.dist_BA - vo.rad) / velocityInVoSpace.magnitude;
+                            // float timeToCollision = CalculateTimeToCollision(vo, sampleVelocity);
+                            float timeToCollision = sampleVelocity.magnitude == 0f ? float.MaxValue : (vo.dist_BA - vo.rad) / sampleVelocity.magnitude;
                             
                             minTimeToCollision = Mathf.Min(minTimeToCollision, timeToCollision);
                         }
@@ -105,27 +99,39 @@ namespace vo
         }
 
         // Calculate velocity obstacles for an agent if collision would happen within the time threshold 
-        private List<VelocityObstacle> CalculateObstacles(Agent agentA)
+        private List<VelocityObstacle> CalculateVelocityObstacles(Agent agentA)
         {
             List<VelocityObstacle> vos = new();
             
             // Exclude self
             foreach (Agent agentB in agents.Where(b => b != agentA))
             {
-                Vector2 transl_vB_vA = (agentB.Velocity - agentA.Velocity) * RvoAlpha;
-
+                Vector2 transl_vB_vA = agentB.Velocity - agentA.Velocity;
                 Vector2 direction_BA = (agentB.Position - agentA.Position).normalized;
                 float dist_BA = Vector2.Distance(agentA.Position, agentB.Position);
                 float rad = agentA.Radius + agentB.Radius;
+
+                Vector2 vo_apex = (agentA.Velocity + agentB.Velocity) * RvoAlpha - direction_BA * dist_BA; 
 
                 Vector2 perpendicular_BA = Vector2.Perpendicular(direction_BA);
                 Vector2 bound_left = direction_BA * dist_BA + perpendicular_BA * rad;
                 Vector2 bound_right = direction_BA * dist_BA - perpendicular_BA * rad;
 
-                var vo = new VelocityObstacle(agentA, agentB, transl_vB_vA, bound_left, bound_right, dist_BA, rad);
+                var vo = new VelocityObstacle(agentA, agentB, vo_apex, bound_left, bound_right, dist_BA, rad);
                 vos.Add(vo);
             }
             return vos;
+        }
+
+        private bool IsInVO(Vector2 sampleVelocity, VelocityObstacle vo)
+        {
+            Vector2 velocityInVoSpace = sampleVelocity - vo.apex;
+            float theta = Vector2.Angle(Vector2.right, velocityInVoSpace);
+
+            float thetaRight = Vector2.Angle(vo.bound_right, Vector2.right);
+            float thetaLeft = Vector2.Angle(vo.bound_left, Vector2.right);
+
+            return InBetween(thetaRight, theta, thetaLeft);
         }
 
         private bool InBetween(float thetaRight, float thetaDif, float thetaLeft)
@@ -163,17 +169,16 @@ namespace vo
                 Gizmos.color = Color.green;
                 Gizmos.DrawSphere(Vec2To3(agent.Position), agent.Radius);
 
-                var vos = CalculateObstacles(agent);
+                var vos = CalculateVelocityObstacles(agent);
                 foreach (var vo in vos)
                 {
                     Gizmos.color = Color.red;
 
-                    Vector2 perpendicular_VB = Vector2.Perpendicular(vo.agentB.Velocity).normalized;
-                    Vector2 boundLeftWorld = vo.agentB.Position + (vo.agentB.Velocity.normalized * vo.dist_BA + perpendicular_VB * vo.rad).normalized * vo.agentB.Velocity.magnitude * TimeLookAhead;
-                    Vector2 boundRightWorld = vo.agentB.Position + (vo.agentB.Velocity.normalized * vo.dist_BA - perpendicular_VB * vo.rad).normalized * vo.agentB.Velocity.magnitude * TimeLookAhead;
-
-                    Gizmos.DrawLine(Vec2To3(vo.agentB.Position), Vec2To3(boundLeftWorld));
-                    Gizmos.DrawLine(Vec2To3(vo.agentB.Position), Vec2To3(boundRightWorld));
+                    Vector2 boundLeftWorld = agent.Position + vo.bound_left;
+                    Vector2 boundRightWorld = agent.Position + vo.bound_right;
+                    
+                    Gizmos.DrawLine(Vec2To3(agent.Position), Vec2To3(boundLeftWorld));
+                    Gizmos.DrawLine(Vec2To3(agent.Position), Vec2To3(boundRightWorld));
                 }
             } else {
                 Gizmos.color = Color.cyan;

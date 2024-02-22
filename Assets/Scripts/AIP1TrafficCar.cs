@@ -119,8 +119,7 @@ public class AIP1TrafficCar : MonoBehaviour
         {
             return;
         }
-        // TODO: Car hybrid A* boxcast fix, Use group 21 obstacle map
-        // TODO: Consider static obstacles as well in avoidance
+        
         // TODO: Extend RVO to HRVO.
         // TODO: Vehicle stuck timer?
 
@@ -135,7 +134,7 @@ public class AIP1TrafficCar : MonoBehaviour
         float avoidanceRadius = colliderResizeFactor * m_Collider.transform.localScale.z;
         agent.Update(new Agent(Vec3To2(transform.position), Vec3To2(my_rigidbody.velocity), Vec3To2(targetVelocity), avoidanceRadius));
 
-        voManager.CalculateNewVelocity(agent,
+        voManager.CalculateNewRVOVelocity(agent,
             Time.fixedDeltaTime,
             out bool isColliding, 
             out Vector2 newVelocity);
