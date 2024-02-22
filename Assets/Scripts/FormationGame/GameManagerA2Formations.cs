@@ -21,13 +21,18 @@ namespace FormationGame
 
         public void FixedUpdate()
         {
-            if (!isComplete && goals.ToList().TrueForAll(goal => goal.CheckAchieved(null)))
+            if (!isComplete)
             {
-                isComplete = true;
                 completionTime = goals.Max(goals => goals.CurrentTime());
                 penaltyTime = (float)m_FormationGoals.Sum(goal => 2 * goal.target.PenaltyTime());
+            }
+
+            if (isComplete)
+            {
                 finalTime = completionTime + penaltyTime;
             }
+
+            isComplete = goals.ToList().TrueForAll(goal => goal.CheckAchieved(null));
         }
     }
 }
