@@ -8,6 +8,7 @@ using UnityEngine;
 
 using aStar;
 using vo;
+using PathPlanning;
 
 [RequireComponent(typeof(CarController))]
 public class AIP1TrafficCar : MonoBehaviour
@@ -36,6 +37,7 @@ public class AIP1TrafficCar : MonoBehaviour
     private Agent agent;
 
     private static VOManager voManager;
+    private static CollisionDetector m_Detector = null;
     private static bool StaticInitDone = false;
 
     private void Start()
@@ -51,14 +53,7 @@ public class AIP1TrafficCar : MonoBehaviour
 
         if (!StaticInitDone)
         {
-            voManager = new()
-            {
-                maxSpeed = m_Car.MaxSpeed, 
-                maxAngle = m_Car.m_MaximumSteerAngle,
-                allowReversing = allowReversing,
-                maxAccelaration = 6f
-            };
-
+            var sw = System.Diagnostics.Stopwatch.StartNew();
             // Rescale grid to have square shaped grid cells with size proportional to the car length
             float gridCellSize = m_Collider.transform.localScale.z;
             Vector3 gridScale = m_ObstacleMap.mapGrid.transform.localScale;
@@ -71,6 +66,23 @@ public class AIP1TrafficCar : MonoBehaviour
             m_ObstacleMapManager.Initialize();
             m_ObstacleMap = m_ObstacleMapManager.ObstacleMap;
             StaticInitDone = true;
+            Debug.Log($"Grid rescaling: {sw.ElapsedMilliseconds} ms");
+
+            sw.Restart();
+            m_Detector = new CollisionDetector(m_ObstacleMap, margin: 1f);
+            Debug.Log($"Detector init: {sw.ElapsedMilliseconds} ms");
+
+            // Init collision avoidance
+            voManager = new()
+            {
+                maxSpeed = m_Car.MaxSpeed, 
+                maxAngle = m_Car.m_MaximumSteerAngle,
+                allowReversing = allowReversing,
+                maxAccelaration = 6f
+            };
+
+            StaticInitDone = true;
+            sw.Stop();
         }
 
         var localStart = m_ObstacleMap.mapGrid.WorldToLocal(transform.position);
@@ -107,11 +119,9 @@ public class AIP1TrafficCar : MonoBehaviour
         {
             return;
         }
-
-        // TODO: Fix current VO bugs
-        // TODO: Better velocity obstacles. Use RVO/HRVO.
         // TODO: Car hybrid A* boxcast fix, Use group 21 obstacle map
         // TODO: Consider static obstacles as well in avoidance
+        // TODO: Extend RVO to HRVO.
         // TODO: Vehicle stuck timer?
 
         AStarNode target = nodePath[currentNodeIdx];
@@ -139,9 +149,9 @@ public class AIP1TrafficCar : MonoBehaviour
                    targetVelocity * (1f - avoidanceWeight) + avoidanceVelocity * avoidanceWeight);
 
         Debug.DrawLine(transform.position, targetPosition, Color.magenta);
-        Debug.DrawLine(transform.position, transform.position + my_rigidbody.velocity, Color.white);
+        // Debug.DrawLine(transform.position, transform.position + my_rigidbody.velocity, Color.white);
         Debug.DrawLine(transform.position, transform.position + targetVelocity, Color.blue);
-        Debug.DrawLine(transform.position, transform.position + avoidanceVelocity, Color.red);
+        Debug.DrawLine(transform.position, transform.position + avoidanceVelocity, Color.green);
         // Debug.DrawLine(transform.position, avoidancePosition, Color.red);
     }
 
@@ -160,7 +170,7 @@ public class AIP1TrafficCar : MonoBehaviour
         float angle_between_vectors = Vector3.Angle(current_direction.normalized, direction_to_lookahead_index.normalized);
 
         // A threshold when we consider a checkpoint reached
-        float reach_threshold = 8f;
+        float reach_threshold = 9f;
 
         reach_threshold *= angle_between_vectors / 180.0f;
 
@@ -173,7 +183,7 @@ public class AIP1TrafficCar : MonoBehaviour
         float acceleration = Vector3.Dot(desired_acceleration, transform.forward);
 
         float distance = Vector3.Distance(targetPosition, current_position);
-        if (distance < reach_threshold || distance < 2f)
+        if (distance < reach_threshold || distance < 3f)
         {
             currentNodeIdx = Mathf.Min(currentNodeIdx + 1, nodePath.Count - 1);
             targetPosition = nodePath[currentNodeIdx].GetGlobalPosition();

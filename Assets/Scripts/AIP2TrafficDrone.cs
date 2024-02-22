@@ -9,6 +9,7 @@ using UnityEngine;
 
 using aStar;
 using vo;
+using PathPlanning;
 
 [RequireComponent(typeof(DroneController))]
 public class AIP2TrafficDrone : MonoBehaviour
@@ -29,12 +30,13 @@ public class AIP2TrafficDrone : MonoBehaviour
     private List<AStarNode> nodePath = new();
     private int currentNodeIdx;
     private HybridAStarGenerator pathFinder = null;
-    public bool drawDebug = false;
+    public bool drawDebug = true;
 
     private Agent agent;
 
     private static VOManager voManager;
     private static bool StaticInitDone = false;
+    private static CollisionDetector m_Detector = null;
 
     private void Start()
     {
@@ -49,16 +51,9 @@ public class AIP2TrafficDrone : MonoBehaviour
 
         if (!StaticInitDone)
         {
-            voManager = new()
-            {
-                maxSpeed = m_Drone.max_speed,
-                maxAngle = 40f,
-                allowReversing = allowReversing,
-                maxAccelaration = m_Drone.max_acceleration
-            };
-
+            var sw = System.Diagnostics.Stopwatch.StartNew();
             // Rescale grid to have square shaped grid cells with size proportional to drone size
-            float gridCellSize = 4f * m_Collider.height;
+            float gridCellSize = colliderResizeFactor * m_Collider.height;
             Vector3 gridScale = m_ObstacleMap.mapGrid.transform.localScale;
 
             m_ObstacleMapManager.grid.cellSize = new Vector3(
@@ -68,7 +63,24 @@ public class AIP2TrafficDrone : MonoBehaviour
             m_MapManager.Initialize();
             m_ObstacleMapManager.Initialize();
             m_ObstacleMap = m_ObstacleMapManager.ObstacleMap;
+            Debug.Log($"Grid rescaling: {sw.ElapsedMilliseconds} ms");
+
+            sw.Restart();
+            m_Detector = new CollisionDetector(m_ObstacleMap, margin: 1f);
+            Debug.Log($"Detector init: {sw.ElapsedMilliseconds} ms");
+
+            // Init collision avoidance
+            voManager = new VOManager()
+            {
+                maxSpeed = m_Drone.max_speed,
+                maxAngle = 40f,
+                allowReversing = allowReversing,
+                maxAccelaration = m_Drone.max_acceleration,
+                Detector = m_Detector
+            };
+
             StaticInitDone = true;
+            sw.Stop();
         }
 
         var localStart = m_ObstacleMap.mapGrid.WorldToLocal(transform.position);
@@ -77,7 +89,11 @@ public class AIP2TrafficDrone : MonoBehaviour
         // Generate path with Hybrid A*
         currentNodeIdx = 0;
         pathFinder = new HybridAStarGenerator(m_ObstacleMap.mapGrid, m_ObstacleMap, 40f, m_Collider,
-                        colliderResizeFactor, true, allowReversing, 2f);
+                        colliderResizeFactor, true, allowReversing, 2f)
+        {
+            Detector = m_Detector
+        };
+
         nodePath = pathFinder.GeneratePath(
             new Vector3(localStart.x, 0.05f, localStart.z),
             new Vector3(localGoal.x, 0.05f, localGoal.z),
@@ -86,12 +102,12 @@ public class AIP2TrafficDrone : MonoBehaviour
 
         nodePath = smoothPath ? pathFinder.SmoothPath(nodePath) : nodePath;
 
-        // Vector3 old_wp = localStart;
-        // foreach (var wp in nodePath)
-        // {
-        //     Debug.DrawLine(m_ObstacleMap.mapGrid.LocalToWorld(old_wp), m_ObstacleMap.mapGrid.LocalToWorld(wp.LocalPosition), Color.green, 4f);
-        //     old_wp = wp.LocalPosition;
-        // }
+        Vector3 old_wp = localStart;
+        foreach (var wp in nodePath)
+        {
+            Debug.DrawLine(m_ObstacleMap.mapGrid.LocalToWorld(old_wp), m_ObstacleMap.mapGrid.LocalToWorld(wp.LocalPosition), Color.green, 4f);
+            old_wp = wp.LocalPosition;
+        }
 
         // Initialize velocity obstacles for traffic
         CalculateTargets(out Vector3 _, out Vector3 targetVelocity);
@@ -183,7 +199,11 @@ public class AIP2TrafficDrone : MonoBehaviour
     }
 
     private void OnDrawGizmos() {
-        voManager.DebugDraw(agent);
+        if (drawDebug)
+        {
+            voManager.DebugDraw(agent);
+            m_Detector?.DebugDrawBoundingBoxes();
+        }
     }
 
     private void CalculateTargets(out Vector3 targetPosition, out Vector3 targetVelocity)

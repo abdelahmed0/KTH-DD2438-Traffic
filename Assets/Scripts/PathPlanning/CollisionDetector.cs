@@ -5,7 +5,7 @@ using Scripts.Map;
 
 namespace PathPlanning
 {
-    class CollisionDetector
+    public class CollisionDetector
     {
         public List<Rect> boundingBoxes;
         private float yMin;

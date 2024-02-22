@@ -2,6 +2,7 @@ using UnityEngine;
 using System.Collections.Generic;
 using System;
 using Scripts.Map;
+using PathPlanning;
 
 namespace aStar
 {
@@ -13,6 +14,7 @@ namespace aStar
         // Resolution of 10 corresponds to 360/10=36 possible angles per cell
         public static float AngleResolution = 10f;
         public readonly float globalStepDistance;
+        public CollisionDetector Detector;
         private const float GoalThreshold = 0.1f;
         private const int maxSteps = 100000;
 
@@ -216,53 +218,10 @@ namespace aStar
             var cell2d = new Vector2Int(cell.x, cell.y);
             if (!obstacleMap.traversabilityPerCell.ContainsKey(cell2d))
                 return false;
-                                        
-            // Node in blocked cell
-            var nextCell = grid.LocalToCell(next.LocalPosition);
-            if (obstacleMap.traversabilityPerCell[new Vector2Int(nextCell.x, nextCell.y)] == ObstacleMap.Traversability.Blocked)
-                return false;
-
-            // return true;
             
             // Check if path to node is blocked
-            Vector3 direction = (nextGlobal - currentGlobal).normalized;
-            Quaternion orientation;
-            bool hit;
-            if (fixedOrientation)
-            {
-                orientation = Quaternion.Euler(Vector3.forward);
-                // hit = Physics.Raycast(currentGlobal - collider.transform.localScale.z * direction * 0.4f,
-                //                       direction, 
-                //                       Vector3.Distance(currentGlobal, nextGlobal) 
-                //                       + collider.transform.localScale.z * 0.6f);
-                hit = Physics.BoxCast(currentGlobal - collider.transform.localScale.z * direction * 0.4f,
-                                        colliderResizeFactor * collider.transform.localScale / 2f,
-                                        direction,
-                                        out var hitInfo,
-                                        orientation,
-                                        globalStepDistance + collider.transform.localScale.z * colliderResizeFactor);
-                // if (hit && hitInfo.collider.Equals(collider)) // Prevent hitting own collider
-                //     return true;
-            } else {
-                orientation = Quaternion.FromToRotation(Vector3.forward, direction);
-                hit = Physics.BoxCast(currentGlobal, // - collider.transform.localScale.z * direction, //* colliderResizeFactor,
-                                        colliderResizeFactor * collider.transform.localScale / 2f,
-                                        direction,
-                                        out var hitInfo,
-                                        orientation,
-                                        globalStepDistance);
-                if (hit && hitInfo.collider.Equals(collider)) // Prevent hitting own collider
-                    return true;
-            }
-            
-                
-            // if (hit)
-            //     ExtDebug.DrawBoxCastOnHit(currentGlobal,// - collider.transform.localScale.z * direction * colliderResizeFactor,// - collider.transform.localScale.z * direction * colliderResizeFactor,
-            //                             colliderResizeFactor * collider.transform.localScale / 2f,
-            //                             direction, 
-            //                             orientation,
-            //                             hitInfo.distance,
-            //                             Color.blue);
+            bool hit = Detector.LineCollision(new Vector2(currentGlobal.x, currentGlobal.z),
+                                              new Vector2(nextGlobal.x, nextGlobal.z));
             
             return !hit;
     }
