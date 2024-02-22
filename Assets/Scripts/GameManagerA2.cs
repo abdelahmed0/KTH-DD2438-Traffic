@@ -7,6 +7,7 @@ using UnityEngine;
 public class GameManagerA2 : AbstractGameManager
 {
     public float maxDistance = 5;
+    private bool isComplete;
     public Dictionary<GameObject, Goal> vehicleToGoalMapping = new();
 
     public override List<Goal> CreateGoals(List<GameObject> vehicles)
@@ -46,18 +47,17 @@ public class GameManagerA2 : AbstractGameManager
                     goal.CheckAchieved(vehicle);
                 }
             }
-
-            if (goals.ToList().TrueForAll(goal => goal.IsAchieved()))
-            {
-                completionTime = goals.Max(goals => goals.CurrentTime());
-            }
         }
         else
         {
-            if (vehicleToGoalMapping.ToList().TrueForAll(pair => pair.Value.CheckAchieved(pair.Key)))
-            {
-                completionTime = goals.Max(goal => goal.CurrentTime());
-            }
+            vehicleToGoalMapping.ToList().ForEach(pair => pair.Value.CheckAchieved(pair.Key));
         }
+
+        if (!isComplete)
+        {
+            completionTime = goals.Max(goals => goals.CurrentTime());
+        }
+
+        isComplete = goals.ToList().TrueForAll(goal => goal.IsAchieved());
     }
 }

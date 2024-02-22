@@ -42,7 +42,9 @@ namespace FormationGame
 
         public double PenaltyTime()
         {
-            return completionTime - startTime;
+            if (!isStarted) return 0.0;
+            if (isComplete) return completionTime - startTime;
+            return Time.time - startTime;
         }
     }
 }
