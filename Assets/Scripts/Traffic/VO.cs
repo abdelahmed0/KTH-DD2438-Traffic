@@ -33,17 +33,16 @@ namespace vo
         {
             agents.Find(a => a == toUpdate).Update(toCopy);
         }
-        
-        public Vector2 CalculateNewRVOVelocity(Agent agent, float deltaTime, out bool isColliding)
+
+        // Calculate new velocity considering HRVO
+        public Vector2 CalculateNewHRVOVelocity(Agent agent, float deltaTime, out bool isColliding)
         {
-            // RVO: VO apex is translated by alpha from velocity B to velocity A
-            float rvoAlpha = 0.5f;
-            List<VelocityObstacle> rvos = CalculateVelocityObstacles(agent, rvoAlpha);
+            List<VelocityObstacle> rvos = CalculateVelocityObstacles(agent, 0.5f);
 
             Vector2 newVelocity = Vector2.positiveInfinity;
             float minPenalty = float.MaxValue;
-            float angleStep = 5;
-            float wi = 1f; // Aggressiveness factor, lower is more aggressive since collisions are penalized less
+            float angleStep = 10;
+            float w = 1f; // Aggressiveness factor, lower is more aggressive since collisions are penalized less
             isColliding = false;
 
             // Sample in VO space around wanted velocity
@@ -58,7 +57,6 @@ namespace vo
                     Vector2 sampleVelocity = Quaternion.Euler(0, 0, alpha) * agent.Velocity.normalized * speed;
                     float penalty = Vector2.Distance(sampleVelocity, agent.DesiredVelocity);
                     float minTimeToCollision = float.MaxValue;
-                    bool sampleColliding = false;
 
                     // Check static obstacles
                     if (Detector.LineCollision(agent.Position, agent.Position + sampleVelocity.normalized * st_TimeLookaHead))
@@ -66,30 +64,125 @@ namespace vo
                         // Debug.DrawLine(Vec2To3(agent.Position), Vec2To3(agent.Position + sampleVelocity.normalized * st_TimeLookaHead), Color.magenta);
                         continue;
                     }
-                    
+                    // Check velocity obstacles
+                    foreach (VelocityObstacle rvo in rvos)
+                    {
+                        bool isRightOfCenterline = rvo.VelocityRightOfCenterLine(sampleVelocity);
+
+                        // Construct HRVO based on the position relative to the centerline
+                        VelocityObstacle hrvo = ConstructHRVO(rvo, isRightOfCenterline);
+
+                        if (hrvo.ContainsVelocity(sampleVelocity))
+                        {
+                            float timeToCollision = hrvo.CollisionTimeFromVelocity(sampleVelocity);
+                            minTimeToCollision = Mathf.Min(minTimeToCollision, timeToCollision);
+                        }
+                    }
+
+                    bool sampleColliding;
+                    if (minTimeToCollision < TimeLookAhead)
+                    {
+                        penalty += w / minTimeToCollision; // Apply penalty based on time to collision
+                        sampleColliding = true;
+                    }
+                    else
+                        sampleColliding = false;
+
+                    if (penalty < minPenalty)
+                    {
+                        minPenalty = penalty;
+                        newVelocity = sampleVelocity;
+                        isColliding = sampleColliding;
+                    }
+                }
+            }
+
+            return newVelocity;
+        }
+
+        private VelocityObstacle ConstructHRVO(VelocityObstacle rvo, bool isRightOfCenterline)
+        {
+            Vector2 direction_BA = (rvo.agentB.Position - rvo.agentA.Position).normalized;
+            float dist_BA = Vector2.Distance(rvo.agentA.Position, rvo.agentB.Position);
+            float radius = rvo.combinedRadius;
+
+            Vector2 perpendicular_BA = Vector2.Perpendicular(direction_BA);
+            Vector2 bound_left = direction_BA * dist_BA + perpendicular_BA * radius;
+            Vector2 bound_right = direction_BA * dist_BA - perpendicular_BA * radius;
+
+            Vector2 vo_apex_offset = rvo.apex - rvo.agentB.Velocity;
+
+            Vector2 vo_apex = rvo.apex;
+
+            // Replace one side of RVO with VO based on centerline
+            if (isRightOfCenterline)
+            {
+                // Project apex onto VOs left bound for HRVO
+                if (TryGetLineIntersection(vo_apex_offset, bound_right.normalized, Vector2.zero, rvo.boundLeft.normalized,
+                     out Vector2 intersection))
+                    vo_apex = intersection + rvo.apex;
+            }
+            else
+            {
+                // Project apex onto VOs right bound for HRVO
+                if (TryGetLineIntersection(vo_apex_offset, bound_left.normalized, Vector2.zero, rvo.boundRight.normalized,
+                     out Vector2 intersection))
+                    vo_apex = intersection + rvo.apex;
+            }
+
+            return new VelocityObstacle(rvo.agentA, rvo.agentB, vo_apex, bound_left, bound_right, dist_BA, radius);
+        }
+
+        
+        public Vector2 CalculateNewRVOVelocity(Agent agent, float deltaTime, out bool isColliding)
+        {
+            // RVO: VO apex is translated by alpha from velocity B to velocity A
+            float rvoAlpha = 0.5f;
+            List<VelocityObstacle> rvos = CalculateVelocityObstacles(agent, rvoAlpha);
+
+            Vector2 newVelocity = Vector2.positiveInfinity;
+            float minPenalty = float.MaxValue;
+            float angleStep = 5;
+            float w = 1f; // Aggressiveness factor, lower is more aggressive since collisions are penalized less
+            isColliding = false;
+
+            // Sample in VO space around wanted velocity
+            for (float alpha = -maxAngle; alpha <= maxAngle; alpha += angleStep)
+            {
+                float lowerSpeedBound = Mathf.Clamp(agent.Velocity.magnitude - maxAccelaration * deltaTime, allowReversing ? -maxSpeed : 0f, maxSpeed);
+                float upperSpeedBound = Mathf.Clamp(agent.Velocity.magnitude + maxAccelaration * deltaTime, allowReversing ? -maxSpeed : 0f, maxSpeed);
+
+                float speedStep = (upperSpeedBound - lowerSpeedBound) / 5f;
+                for (float speed = lowerSpeedBound; speed <= upperSpeedBound; speed += speedStep)
+                {
+                    Vector2 sampleVelocity = Quaternion.Euler(0, 0, alpha) * agent.Velocity.normalized * speed;
+                    float penalty = Vector2.Distance(sampleVelocity, agent.DesiredVelocity);
+                    float minTimeToCollision = float.MaxValue;
+
+                    // Check static obstacles
+                    if (Detector.LineCollision(agent.Position, agent.Position + sampleVelocity.normalized * st_TimeLookaHead))
+                    {
+                        // Debug.DrawLine(Vec2To3(agent.Position), Vec2To3(agent.Position + sampleVelocity.normalized * st_TimeLookaHead), Color.magenta);
+                        continue;
+                    }
+
                     // Check dynamic obstacles
                     foreach (VelocityObstacle rvo in rvos)
                     {
                         if (rvo.ContainsVelocity(sampleVelocity))
                         {
-
-                            float timeToCollision;
-                            if (sampleVelocity.magnitude == 0f)
-                                timeToCollision = float.MaxValue;
-                            else if (rvo.dist_BA - rvo.combinedRadius < 0f)
-                                timeToCollision = 0.00001f;
-                            else
-                                timeToCollision = (rvo.dist_BA - rvo.combinedRadius) / sampleVelocity.magnitude;
-                            
+                            float timeToCollision = rvo.CollisionTimeFromVelocity(sampleVelocity);
                             minTimeToCollision = Mathf.Min(minTimeToCollision, timeToCollision);
                         }
                     }
 
+                    bool sampleColliding;
                     if (minTimeToCollision < TimeLookAhead)
                     {
-                        penalty += wi / minTimeToCollision; // Apply penalty based on time to collision
+                        penalty += w / minTimeToCollision; // Apply penalty based on time to collision
                         sampleColliding = true;
-                    } else
+                    }
+                    else
                         sampleColliding = false;
 
                     if (penalty < minPenalty)
@@ -118,13 +211,37 @@ namespace vo
                 Vector2 vo_apex = agentA.Velocity * (1f - rvoAlpha) + agentB.Velocity * rvoAlpha - direction_BA * dist_BA; 
 
                 Vector2 perpendicular_BA = Vector2.Perpendicular(direction_BA);
-                Vector2 bound_left = direction_BA * dist_BA + perpendicular_BA * rad * 1.2f; // TODO: Try making bounds un symmetric
+                Vector2 bound_left = direction_BA * dist_BA + perpendicular_BA * rad;
                 Vector2 bound_right = direction_BA * dist_BA - perpendicular_BA * rad;
 
                 var vo = new VelocityObstacle(agentA, agentB, vo_apex, bound_left, bound_right, dist_BA, rad);
                 vos.Add(vo);
             }
             return vos;
+        }
+
+        public bool TryGetLineIntersection(Vector2 p1, Vector2 dir1, Vector2 p2, Vector2 dir2, out Vector2 intersection)
+        {
+            intersection = Vector2.zero;
+
+            // Calculate determinants
+            float det = dir1.x * dir2.y - dir1.y * dir2.x;
+            float det1 = (p2.x - p1.x) * dir2.y - (p2.y - p1.y) * dir2.x;
+            float det2 = (p2.x - p1.x) * dir1.y - (p2.y - p1.y) * dir1.x;
+
+            // If determinants are zero, lines are parallel and have no intersection
+            if (Mathf.Approximately(det, 0f))
+            {
+                return false;
+            }
+
+            // Calculate the t value for the intersection point on the first line
+            float t1 = det1 / det;
+
+            // Use t1 to find the intersection point
+            intersection = p1 + t1 * dir1;
+
+            return true;
         }
 
         // // Draw agent velocity obstacles in agents position space
@@ -163,21 +280,34 @@ namespace vo
                 Gizmos.color = Color.magenta;
                 Gizmos.DrawSphere(Vec2To3(agent.Position + agent.DesiredVelocity), agent.Radius);
 
-                var vos = CalculateVelocityObstacles(agent);
-                foreach (var vo in vos)
+                var rvos = CalculateVelocityObstacles(agent);
+                foreach (var rvo in rvos)
                 {
-                    Gizmos.color = Color.grey;
-
-                    Vector2 boundLeftWorld = vo.apex + vo.boundLeft;
-                    Vector2 boundRightWorld = vo.apex + vo.boundRight;
+                    bool isRight = rvo.VelocityRightOfCenterLine(agent.Velocity);
+                    VelocityObstacle hrvo = ConstructHRVO(rvo, isRight);
                     
-                    DrawTriangle(agent.Position + vo.apex, // Offset to be closer over agent
-                                 agent.Position + boundLeftWorld,
-                                 agent.Position + boundRightWorld);
+                    if (hrvo.ContainsVelocity(hrvo.agentB.Velocity) 
+                        && hrvo.CollisionTimeFromVelocity(hrvo.agentB.Velocity) < TimeLookAhead)
+                    {
+                        Gizmos.color = Color.cyan;
+
+                        Vector2 boundLeftWorld = hrvo.apex + hrvo.boundLeft;
+                        Vector2 boundRightWorld = hrvo.apex + hrvo.boundRight;
+                        
+                        DrawTriangle(agent.Position + hrvo.apex, // Offset to be closer over agent
+                                    agent.Position + boundLeftWorld,
+                                    agent.Position + boundRightWorld);
+                    }
+
+                    // Gizmos.color = Color.grey;
+
+                    // Vector2 boundLeftWorld = rvo.apex + rvo.boundLeft;
+                    // Vector2 boundRightWorld = rvo.apex + rvo.boundRight;
+                    
+                    // DrawTriangle(agent.Position + rvo.apex, // Offset to be closer over agent
+                    //              agent.Position + boundLeftWorld,
+                    //              agent.Position + boundRightWorld);
                 }
-            } else {
-                Gizmos.color = Color.cyan;
-                Gizmos.DrawSphere(Vec2To3(agent.Velocity), agent.Radius);
             }
         }
 

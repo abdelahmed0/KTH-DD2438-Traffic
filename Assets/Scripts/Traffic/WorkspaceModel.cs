@@ -30,6 +30,20 @@ namespace vo
             return Vector2.SignedAngle(centerlineDir, velocityToVoSpace) < 0f;
         }
 
+        public float CollisionTimeFromVelocity(Vector2 velocity)
+        {
+            float timeToCollision;
+
+            if (velocity.magnitude == 0f)
+                timeToCollision = float.MaxValue;
+            else if (dist_BA - combinedRadius < 0f)
+                timeToCollision = 0.00001f;
+            else
+                timeToCollision = (dist_BA - combinedRadius) / velocity.magnitude;
+            
+            return timeToCollision;
+        }
+
         public bool ContainsVelocity(Vector2 velocity)
         {
             Vector2 velocityInVoSpace = velocity - apex;
