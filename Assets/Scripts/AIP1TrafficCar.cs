@@ -120,7 +120,7 @@ public class AIP1TrafficCar : MonoBehaviour
             return;
         }
         
-        // TODO: Extend RVO to HRVO.
+        // TODO: Fix HRVO
         // TODO: Vehicle stuck timer?
 
         AStarNode target = nodePath[currentNodeIdx];
@@ -134,10 +134,7 @@ public class AIP1TrafficCar : MonoBehaviour
         float avoidanceRadius = colliderResizeFactor * m_Collider.transform.localScale.z;
         agent.Update(new Agent(Vec3To2(transform.position), Vec3To2(my_rigidbody.velocity), Vec3To2(targetVelocity), avoidanceRadius));
 
-        voManager.CalculateNewRVOVelocity(agent,
-            Time.fixedDeltaTime,
-            out bool isColliding, 
-            out Vector2 newVelocity);
+        Vector2 newVelocity = voManager.CalculateNewRVOVelocity(agent, Time.fixedDeltaTime, out bool isColliding);
 
         float avoidanceWeight = isColliding ? 1f : 0f;
         

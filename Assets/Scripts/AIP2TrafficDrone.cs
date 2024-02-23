@@ -66,7 +66,7 @@ public class AIP2TrafficDrone : MonoBehaviour
             Debug.Log($"Grid rescaling: {sw.ElapsedMilliseconds} ms");
 
             sw.Restart();
-            m_Detector = new CollisionDetector(m_ObstacleMap, margin: gridCellSize);
+            m_Detector = new CollisionDetector(m_ObstacleMap, margin: 1f);
             Debug.Log($"Detector init: {sw.ElapsedMilliseconds} ms");
 
             // Init collision avoidance
@@ -127,10 +127,7 @@ public class AIP2TrafficDrone : MonoBehaviour
         float avoidanceRadius = colliderResizeFactor * m_Collider.radius;
         agent.Update(new Agent(Vec3To2(transform.position), Vec3To2(my_rigidbody.velocity), Vec3To2(targetVelocity), avoidanceRadius));
 
-        voManager.CalculateNewRVOVelocity(agent,
-            Time.fixedDeltaTime,
-            out bool isColliding, 
-            out Vector2 newVelocity);
+        Vector2 newVelocity = voManager.CalculateNewRVOVelocity(agent, Time.fixedDeltaTime, out bool isColliding);
 
         float avoidanceWeight = isColliding ? 1f : 0f;
         
@@ -162,9 +159,9 @@ public class AIP2TrafficDrone : MonoBehaviour
         float angle_between_vectors = Vector3.Angle(current_direction.normalized, direction_to_lookahead_index.normalized);
 
         // A threshold when we consider a checkpoint reached
-        float reach_threshold = 10f;
+        float reach_threshold = 4f;
 
-        reach_threshold *= angle_between_vectors / 180.0f;
+        // reach_threshold *= angle_between_vectors / 180.0f;
 
 
         Vector3 pos_error = targetPosition - current_position;
@@ -190,6 +187,7 @@ public class AIP2TrafficDrone : MonoBehaviour
             {
                 // found a closer point
                 currentNodeIdx = i;
+                break;
             }
         }
 
