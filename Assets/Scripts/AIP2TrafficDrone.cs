@@ -77,7 +77,7 @@ public class AIP2TrafficDrone : MonoBehaviour
                 allowReversing = allowReversing,
                 maxAccelaration = m_Drone.max_acceleration,
                 Detector = m_Detector,
-                TimeLookAhead = 4f
+                TimeLookAhead = 2f
             };
 
             StaticInitDone = true;
@@ -103,12 +103,12 @@ public class AIP2TrafficDrone : MonoBehaviour
 
         nodePath = smoothPath ? pathFinder.SmoothPath(nodePath) : nodePath;
 
-        // Vector3 old_wp = localStart;
-        // foreach (var wp in nodePath)
-        // {
-        //     Debug.DrawLine(m_ObstacleMap.mapGrid.LocalToWorld(old_wp), m_ObstacleMap.mapGrid.LocalToWorld(wp.LocalPosition), Color.green, 4f);
-        //     old_wp = wp.LocalPosition;
-        // }
+        Vector3 old_wp = localStart;
+        foreach (var wp in nodePath)
+        {
+            Debug.DrawLine(m_ObstacleMap.mapGrid.LocalToWorld(old_wp), m_ObstacleMap.mapGrid.LocalToWorld(wp.LocalPosition), Color.green, 4f);
+            old_wp = wp.LocalPosition;
+        }
 
         // Initialize velocity obstacles for traffic
         agent = new Agent(Vec3To2(transform.position), Vec3To2(my_rigidbody.velocity), Vector3.zero, m_Collider.radius * colliderResizeFactor);
@@ -125,25 +125,28 @@ public class AIP2TrafficDrone : MonoBehaviour
         CalculateTargets(lookaheadDistance:20f, 
             out Vector3 targetPosition, out Vector3 targetVelocity);
 
-        // Apply weighted avoidance via velocity obstacles
         float avoidanceRadius = colliderResizeFactor * m_Collider.radius;
         agent.Update(new Agent(Vec3To2(transform.position), Vec3To2(my_rigidbody.velocity), Vec3To2(targetVelocity), avoidanceRadius));
 
         Vector2 newVelocity = voManager.CalculateNewHRVOVelocity(agent, Time.fixedDeltaTime, out bool isColliding);
 
-        float avoidanceWeight = isColliding ? 1f : 0f;
-        
-        Vector3 avoidanceVelocity = Vec2To3(newVelocity);
-        Vector3 avoidancePosition = transform.position + avoidanceVelocity.normalized * pathFinder.globalStepDistance;
+        if (isColliding)
+        {
+            // Avoid other agents if collision is detected via VO
+            Vector3 avoidanceVelocity = Vec2To3(newVelocity);
+            Vector3 avoidancePosition = transform.position + avoidanceVelocity;
 
-        PdControll(targetPosition * (1f - avoidanceWeight) + avoidancePosition * avoidanceWeight,
-                   targetVelocity * (1f - avoidanceWeight) + avoidanceVelocity * avoidanceWeight);
+            PdControll(avoidancePosition, avoidanceVelocity);
+            // Debug.DrawLine(transform.position, transform.position + avoidanceVelocity, Color.green);
+        }
+        else
+        {
+            PdControll(targetPosition, targetVelocity);
+            // Debug.DrawLine(transform.position, transform.position + targetVelocity, Color.blue);
+        }
 
-        Debug.DrawLine(transform.position, targetPosition, Color.magenta);
-        // Debug.DrawLine(transform.position, transform.position + my_rigidbody.velocity, Color.white);
-        Debug.DrawLine(transform.position, transform.position + targetVelocity, Color.blue);
-        Debug.DrawLine(transform.position, transform.position + avoidanceVelocity, Color.green);
-        // Debug.DrawLine(transform.position, avoidancePosition, Color.red);
+        // Debug.DrawLine(transform.position, targetPosition, Color.magenta);
+        // Debug.DrawLine(transform.position, transform.position + my_rigidbody.velocity, Color.black);
     }
 
     private void PdControll(Vector3 targetPosition, Vector3 targetVelocity)
@@ -189,17 +192,19 @@ public class AIP2TrafficDrone : MonoBehaviour
         Vector3 nextTargetPosition = m_MapManager.grid.LocalToWorld(nextTarget.LocalPosition);
 
         Vector3 lookaheadPosition = PurePursuitTargetPosition(lookaheadDistance);
+        Vector2 lookaheadPosition2d = new(lookaheadPosition.x, lookaheadPosition.z);
+
+        Vector2 position2d = new(transform.position.x, transform.position.z);
 
         // Only use lookahead if it is not occluded
-        if(!m_Detector.LineCollision(new Vector2(transform.position.x, transform.position.z), new Vector2(lookaheadPosition.x, lookaheadPosition.z)))
+        if(!m_Detector.LineCollision(position2d, lookaheadPosition2d))
         {
-            Vector3 current_direction = transform.forward;
-            Vector3 direction_to_lookahead_index = transform.position - lookaheadPosition;
+            Vector2 currentDirection = new(my_rigidbody.velocity.normalized.x, my_rigidbody.velocity.normalized.z);
+            Vector2 directionToLookhead = (lookaheadPosition2d - position2d).normalized;
 
-            float lookaheadAngle = Vector3.SignedAngle(current_direction.normalized, direction_to_lookahead_index.normalized, Vector3.up);
-
-            float targetSpeed = Mathf.Lerp(0f, m_Drone.max_speed, 1f - Mathf.Clamp01(lookaheadAngle / 90f));
-            targetVelocity = (nextTargetPosition - targetPosition).normalized * targetSpeed;
+            float lookaheadAngle = Vector2.Angle(directionToLookhead, currentDirection);
+            float targetSpeed = Mathf.Lerp(0f, m_Drone.max_speed, 1f - Mathf.Clamp01(lookaheadAngle / 180f));
+            targetVelocity = (lookaheadPosition - targetPosition).normalized * targetSpeed;
         }
         else 
         {
@@ -215,7 +220,7 @@ public class AIP2TrafficDrone : MonoBehaviour
             Vector3 pathNodePosition = nodePath[i].GetGlobalPosition();
             if (Vector3.Distance(transform.position, pathNodePosition) > lookaheadDistance)
             {
-                Debug.DrawLine(transform.position, pathNodePosition, Color.white);
+                // Debug.DrawLine(transform.position, pathNodePosition, Color.white);
                 return pathNodePosition;
             }
         }
