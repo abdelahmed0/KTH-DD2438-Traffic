@@ -120,6 +120,26 @@ PrefabInstance:
       propertyPath: m_IsActive
       value: 0
       objectReference: {fileID: 0}
+    - target: {fileID: 5092795279496398695, guid: 140be9509c10dd4408a9f76e1cf6759a,
+        type: 3}
+      propertyPath: m_Enabled
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 5092795279496398695, guid: 140be9509c10dd4408a9f76e1cf6759a,
+        type: 3}
+      propertyPath: PlaybackOn
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 5092795279496398695, guid: 140be9509c10dd4408a9f76e1cf6759a,
+        type: 3}
+      propertyPath: RecordingOn
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 5092795279496398695, guid: 140be9509c10dd4408a9f76e1cf6759a,
+        type: 3}
+      propertyPath: trajectory_filename
+      value: Text/Traj_D_27_Open
+      objectReference: {fileID: 0}
     - target: {fileID: 5250475147278001453, guid: 140be9509c10dd4408a9f76e1cf6759a,
         type: 3}
       propertyPath: m_Name

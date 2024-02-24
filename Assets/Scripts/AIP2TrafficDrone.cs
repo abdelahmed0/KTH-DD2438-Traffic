@@ -122,7 +122,8 @@ public class AIP2TrafficDrone : MonoBehaviour
             return;
         }
 
-        CalculateTargets(out Vector3 targetPosition, out Vector3 targetVelocity);
+        CalculateTargets(lookaheadDistance:20f, 
+            out Vector3 targetPosition, out Vector3 targetVelocity);
 
         // Apply weighted avoidance via velocity obstacles
         float avoidanceRadius = colliderResizeFactor * m_Collider.radius;
@@ -148,35 +149,12 @@ public class AIP2TrafficDrone : MonoBehaviour
     private void PdControll(Vector3 targetPosition, Vector3 targetVelocity)
     {
         Vector3 current_position = transform.position;
-        
-        // Number nodes to lookahead to see if path is turning
-        int lookahead = 2;
-        int lookahead_index = Mathf.Min(currentNodeIdx + lookahead, nodePath.Count - 1);
-
-        Vector3 current_direction = transform.forward;
-        Vector3 lookahead_position = nodePath[lookahead_index].GetGlobalPosition();
-        Vector3 direction_to_lookahead_index = current_position - lookahead_position;
-
-        float angle_between_vectors = Vector3.Angle(current_direction.normalized, direction_to_lookahead_index.normalized);
-
-        // A threshold when we consider a checkpoint reached
-        float reach_threshold = 8f;
-
-        reach_threshold *= angle_between_vectors / 180.0f;
-
-
-        Vector3 pos_error = targetPosition - current_position;
-        Vector3 vel_error = targetVelocity - my_rigidbody.velocity;
-        Vector3 desired_acceleration = (k_p * pos_error + k_d * vel_error).normalized; // normalize to receive steering and accel values between (-1, 1)
-
-        float steering = Vector3.Dot(desired_acceleration, transform.right);
-        float acceleration = Vector3.Dot(desired_acceleration, transform.forward);
 
         float distance = Vector3.Distance(targetPosition, current_position);
-        if (distance < reach_threshold || distance < 2f)
+        if (distance < 2f)
         {
             currentNodeIdx = Mathf.Min(currentNodeIdx + 1, nodePath.Count - 1);
-            targetPosition = nodePath[currentNodeIdx].GetGlobalPosition();
+            return;
         }
 
         for (int i = currentNodeIdx + 1; i < nodePath.Count; ++i)
@@ -188,11 +166,60 @@ public class AIP2TrafficDrone : MonoBehaviour
             {
                 // found a closer point
                 currentNodeIdx = i;
-                break;
+                return;
             }
         }
+        
+        // Move via PD controller
+        Vector3 pos_error = targetPosition - current_position;
+        Vector3 vel_error = targetVelocity - my_rigidbody.velocity;
+        Vector3 desired_acceleration = (k_p * pos_error + k_d * vel_error).normalized; // normalize to receive steering and accel values between (-1, 1)
+
+        float steering = Vector3.Dot(desired_acceleration, transform.right);
+        float acceleration = Vector3.Dot(desired_acceleration, transform.forward);
 
         m_Drone.Move(steering, acceleration);
+    }
+
+    private void CalculateTargets(float lookaheadDistance, out Vector3 targetPosition, out Vector3 targetVelocity)
+    {
+        AStarNode target = nodePath[currentNodeIdx];
+        AStarNode nextTarget = nodePath[Math.Min(currentNodeIdx + 1, nodePath.Count-1)];
+        targetPosition = m_MapManager.grid.LocalToWorld(target.LocalPosition);
+        Vector3 nextTargetPosition = m_MapManager.grid.LocalToWorld(nextTarget.LocalPosition);
+
+        Vector3 lookaheadPosition = PurePursuitTargetPosition(lookaheadDistance);
+
+        // Only use lookahead if it is not occluded
+        if(!m_Detector.LineCollision(new Vector2(transform.position.x, transform.position.z), new Vector2(lookaheadPosition.x, lookaheadPosition.z)))
+        {
+            Vector3 current_direction = transform.forward;
+            Vector3 direction_to_lookahead_index = transform.position - lookaheadPosition;
+
+            float lookaheadAngle = Vector3.SignedAngle(current_direction.normalized, direction_to_lookahead_index.normalized, Vector3.up);
+
+            float targetSpeed = Mathf.Lerp(0f, m_Drone.max_speed, 1f - Mathf.Clamp01(lookaheadAngle / 90f));
+            targetVelocity = (nextTargetPosition - targetPosition).normalized * targetSpeed;
+        }
+        else 
+        {
+            float targetSpeed = Mathf.Lerp(0f, m_Drone.max_speed, ((nextTargetPosition - targetPosition) / m_Drone.max_speed).magnitude);
+            targetVelocity = (nextTargetPosition - targetPosition).normalized * targetSpeed;
+        }
+    }
+
+    private Vector3 PurePursuitTargetPosition(float lookaheadDistance)
+    {
+        for (int i = currentNodeIdx; i < nodePath.Count; i++)
+        {
+            Vector3 pathNodePosition = nodePath[i].GetGlobalPosition();
+            if (Vector3.Distance(transform.position, pathNodePosition) > lookaheadDistance)
+            {
+                Debug.DrawLine(transform.position, pathNodePosition, Color.white);
+                return pathNodePosition;
+            }
+        }
+        return nodePath[^1].GetGlobalPosition(); // Return last node if none found within lookahead distance
     }
 
     private void OnDrawGizmos() {
@@ -201,16 +228,6 @@ public class AIP2TrafficDrone : MonoBehaviour
             voManager?.DebugDraw(agent);
             // m_Detector?.DebugDrawBoundingBoxes();
         }
-    }
-
-    private void CalculateTargets(out Vector3 targetPosition, out Vector3 targetVelocity)
-    {
-        AStarNode target = nodePath[currentNodeIdx];
-        AStarNode nextTarget = nodePath[Math.Min(currentNodeIdx + 1, nodePath.Count-1)];
-        targetPosition = m_MapManager.grid.LocalToWorld(target.LocalPosition);
-        Vector3 nextTargetPosition = m_MapManager.grid.LocalToWorld(nextTarget.LocalPosition);
-        float targetSpeed = Mathf.Lerp(0f, m_Drone.max_speed, ((nextTargetPosition - targetPosition) / m_Drone.max_speed).magnitude);
-        targetVelocity = (nextTargetPosition - targetPosition).normalized * targetSpeed;
     }
 
     private Vector2 Vec3To2(Vector3 vec)

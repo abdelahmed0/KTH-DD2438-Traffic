@@ -272,14 +272,8 @@ namespace vo
         // Draw agent velocity obstacles in velocity space
         public void DebugDraw(Agent agent)
         {
-            if (agent == agents[1]) //if (agent == agents[1] || agent == agents[agents.Count - 1])
+            if (true)//(agent == agents[1]) //if (agent == agents[1] || agent == agents[agents.Count - 1])
             {
-                Gizmos.color = Color.green;
-                Gizmos.DrawSphere(Vec2To3(agent.Position + agent.Velocity), agent.Radius);
-
-                Gizmos.color = Color.magenta;
-                Gizmos.DrawSphere(Vec2To3(agent.Position + agent.DesiredVelocity), agent.Radius);
-
                 var rvos = CalculateVelocityObstacles(agent);
                 foreach (var rvo in rvos)
                 {
@@ -316,6 +310,12 @@ namespace vo
                     }
 
                 }
+
+                Gizmos.color = Color.green;
+                Gizmos.DrawSphere(Vec2To3(agent.Position + agent.Velocity), agent.Radius);
+
+                Gizmos.color = Color.magenta;
+                Gizmos.DrawSphere(Vec2To3(agent.Position + agent.DesiredVelocity), agent.Radius);
             }
         }
 
