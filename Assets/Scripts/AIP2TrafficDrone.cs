@@ -76,7 +76,8 @@ public class AIP2TrafficDrone : MonoBehaviour
                 maxAngle = 40f,
                 allowReversing = allowReversing,
                 maxAccelaration = m_Drone.max_acceleration,
-                Detector = m_Detector
+                Detector = m_Detector,
+                TimeLookAhead = 4f
             };
 
             StaticInitDone = true;
@@ -127,7 +128,7 @@ public class AIP2TrafficDrone : MonoBehaviour
         float avoidanceRadius = colliderResizeFactor * m_Collider.radius;
         agent.Update(new Agent(Vec3To2(transform.position), Vec3To2(my_rigidbody.velocity), Vec3To2(targetVelocity), avoidanceRadius));
 
-        Vector2 newVelocity = voManager.CalculateNewRVOVelocity(agent, Time.fixedDeltaTime, out bool isColliding);
+        Vector2 newVelocity = voManager.CalculateNewHRVOVelocity(agent, Time.fixedDeltaTime, out bool isColliding);
 
         float avoidanceWeight = isColliding ? 1f : 0f;
         
@@ -159,9 +160,9 @@ public class AIP2TrafficDrone : MonoBehaviour
         float angle_between_vectors = Vector3.Angle(current_direction.normalized, direction_to_lookahead_index.normalized);
 
         // A threshold when we consider a checkpoint reached
-        float reach_threshold = 4f;
+        float reach_threshold = 8f;
 
-        // reach_threshold *= angle_between_vectors / 180.0f;
+        reach_threshold *= angle_between_vectors / 180.0f;
 
 
         Vector3 pos_error = targetPosition - current_position;

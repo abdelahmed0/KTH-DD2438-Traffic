@@ -9,8 +9,8 @@ namespace vo
     {
         public static bool DebugOn = false;
 
-        public const float TimeLookAhead = 5f; // Functions as a truncation of the VOs
-        public const float st_TimeLookaHead = 3f; // Static obstacle collision time lookahead
+        public float TimeLookAhead = 5f; // Functions as a truncation of the VOs
+        public float st_TimeLookaHead = 3f; // Static obstacle collision time lookahead
         public float maxSpeed = 50f;
         public float maxAngle = 30f;
         public float maxAccelaration = 5f;
@@ -41,7 +41,7 @@ namespace vo
 
             Vector2 newVelocity = Vector2.positiveInfinity;
             float minPenalty = float.MaxValue;
-            float angleStep = 10;
+            float angleStep = 10f;
             float w = 1f; // Aggressiveness factor, lower is more aggressive since collisions are penalized less
             isColliding = false;
 
@@ -51,7 +51,7 @@ namespace vo
                 float lowerSpeedBound = Mathf.Clamp(agent.Velocity.magnitude - maxAccelaration * deltaTime, allowReversing ? -maxSpeed : 0f, maxSpeed);
                 float upperSpeedBound = Mathf.Clamp(agent.Velocity.magnitude + maxAccelaration * deltaTime, allowReversing ? -maxSpeed : 0f, maxSpeed);
 
-                float speedStep = (upperSpeedBound - lowerSpeedBound) / 5f;
+                float speedStep = (upperSpeedBound - lowerSpeedBound) / 3f;
                 for (float speed = lowerSpeedBound; speed <= upperSpeedBound; speed += speedStep)
                 {
                     Vector2 sampleVelocity = Quaternion.Euler(0, 0, alpha) * agent.Velocity.normalized * speed;
@@ -272,7 +272,7 @@ namespace vo
         // Draw agent velocity obstacles in velocity space
         public void DebugDraw(Agent agent)
         {
-            if (agent == agents[0]) //if (agent == agents[1] || agent == agents[agents.Count - 1])
+            if (agent == agents[1]) //if (agent == agents[1] || agent == agents[agents.Count - 1])
             {
                 Gizmos.color = Color.green;
                 Gizmos.DrawSphere(Vec2To3(agent.Position + agent.Velocity), agent.Radius);
@@ -283,13 +283,29 @@ namespace vo
                 var rvos = CalculateVelocityObstacles(agent);
                 foreach (var rvo in rvos)
                 {
+                    // Draw RVO
+                    Gizmos.color = Color.grey;
+
+                    if (rvo.ContainsVelocity(rvo.agentB.Velocity) 
+                        && rvo.CollisionTimeFromVelocity(rvo.agentB.Velocity) < TimeLookAhead)
+                    {
+                        Vector2 boundLeftWorld = rvo.apex + rvo.boundLeft;
+                        Vector2 boundRightWorld = rvo.apex + rvo.boundRight;
+                        
+                        DrawTriangle(agent.Position + rvo.apex, // Offset to be closer over agent
+                                    agent.Position + boundLeftWorld,
+                                    agent.Position + boundRightWorld);
+                    }
+
+                    // Draw HRVO
+                    Gizmos.color = Color.cyan;
+
                     bool isRight = rvo.VelocityRightOfCenterLine(agent.Velocity);
                     VelocityObstacle hrvo = ConstructHRVO(rvo, isRight);
                     
                     if (hrvo.ContainsVelocity(hrvo.agentB.Velocity) 
                         && hrvo.CollisionTimeFromVelocity(hrvo.agentB.Velocity) < TimeLookAhead)
                     {
-                        Gizmos.color = Color.cyan;
 
                         Vector2 boundLeftWorld = hrvo.apex + hrvo.boundLeft;
                         Vector2 boundRightWorld = hrvo.apex + hrvo.boundRight;
@@ -299,14 +315,6 @@ namespace vo
                                     agent.Position + boundRightWorld);
                     }
 
-                    // Gizmos.color = Color.grey;
-
-                    // Vector2 boundLeftWorld = rvo.apex + rvo.boundLeft;
-                    // Vector2 boundRightWorld = rvo.apex + rvo.boundRight;
-                    
-                    // DrawTriangle(agent.Position + rvo.apex, // Offset to be closer over agent
-                    //              agent.Position + boundLeftWorld,
-                    //              agent.Position + boundRightWorld);
                 }
             }
         }
