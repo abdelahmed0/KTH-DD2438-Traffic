@@ -1,6 +1,6 @@
 using UnityEngine;
 
-namespace vo
+namespace avoidance
 {
     public class VelocityObstacle
     {

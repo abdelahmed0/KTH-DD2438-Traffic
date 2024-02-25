@@ -7,7 +7,7 @@ using Scripts.Map;
 using UnityEngine;
 
 using aStar;
-using vo;
+using avoidance;
 using PathPlanning;
 
 [RequireComponent(typeof(CarController))]
@@ -74,7 +74,7 @@ public class AIP1TrafficCar : MonoBehaviour
             Debug.Log($"Detector init: {sw.ElapsedMilliseconds} ms");
 
             // Init collision avoidance
-            voManager = new()
+            CollisionAvoidanceAlgorithm collisionAlgorithm = new HRVOAlgorithm()
             {
                 maxSpeed = m_Car.MaxSpeed, 
                 maxAngle = m_Car.m_MaximumSteerAngle,
@@ -83,6 +83,8 @@ public class AIP1TrafficCar : MonoBehaviour
                 Detector = m_Detector,
                 TimeLookAhead = 3f
             };
+            voManager = new();
+            voManager.SetCollisionAvoidanceAlgorithm(collisionAlgorithm);
 
             StaticInitDone = true;
             sw.Stop();
@@ -122,8 +124,8 @@ public class AIP1TrafficCar : MonoBehaviour
 
     private void FixedUpdate()
     {
-        // TODO: Car collision avoidance
         // TODO: VO RVO HRVO class refactoring
+        // TODO: Fix Car collision avoidance
         // TODO: Fix HRVO?
 
         if (nodePath.Count == 0)
@@ -144,7 +146,7 @@ public class AIP1TrafficCar : MonoBehaviour
         float avoidanceRadius = colliderResizeFactor * m_Collider.transform.localScale.z;
         agent.Update(new Agent(Vec3To2(transform.position), Vec3To2(my_rigidbody.velocity), Vec3To2(targetVelocity), avoidanceRadius));
 
-        Vector2 newVelocity = voManager.CalculateNewHRVOVelocity(agent, Time.fixedDeltaTime, out bool isColliding);
+        Vector2 newVelocity = voManager.CalculateNewVelocity(agent, Time.fixedDeltaTime, out bool isColliding);
 
         if (isColliding)
         {
@@ -248,7 +250,7 @@ public class AIP1TrafficCar : MonoBehaviour
     private void OnDrawGizmos() {
         if (drawDebug)
         {
-            voManager?.DebugDraw(agent);
+            voManager?.DrawDebug(agent);
             // m_Detector?.DebugDrawBoundingBoxes();
         }
         // if (drawDebug && pathFinder != null && pathFinder.flowField != null)

@@ -8,7 +8,7 @@ using Scripts.Map;
 using UnityEngine;
 
 using aStar;
-using vo;
+using avoidance;
 using PathPlanning;
 
 [RequireComponent(typeof(DroneController))]
@@ -75,7 +75,7 @@ public class AIP2TrafficDrone : MonoBehaviour
             Debug.Log($"Detector init: {sw.ElapsedMilliseconds} ms");
 
             // Init collision avoidance
-            voManager = new VOManager()
+            CollisionAvoidanceAlgorithm collisionAlgorithm = new HRVOAlgorithm()
             {
                 maxSpeed = m_Drone.max_speed,
                 maxAngle = 40f,
@@ -84,6 +84,9 @@ public class AIP2TrafficDrone : MonoBehaviour
                 Detector = m_Detector,
                 TimeLookAhead = 2f
             };
+
+            voManager = new VOManager();
+            voManager.SetCollisionAvoidanceAlgorithm(collisionAlgorithm);
 
             StaticInitDone = true;
             sw.Stop();
@@ -152,7 +155,7 @@ public class AIP2TrafficDrone : MonoBehaviour
         float avoidanceRadius = colliderResizeFactor * m_Collider.radius;
         agent.Update(new Agent(Vec3To2(transform.position), Vec3To2(my_rigidbody.velocity), Vec3To2(targetVelocity), avoidanceRadius));
 
-        Vector2 newVelocity = voManager.CalculateNewHRVOVelocity(agent, Time.fixedDeltaTime, out bool isColliding);
+        Vector2 newVelocity = voManager.CalculateNewVelocity(agent, Time.fixedDeltaTime, out bool isColliding);
 
         if (isColliding)
         {
@@ -271,7 +274,7 @@ public class AIP2TrafficDrone : MonoBehaviour
     private void OnDrawGizmos() {
         if (drawDebug)
         {
-            voManager?.DebugDraw(agent);
+            voManager?.DrawDebug(agent);
             // m_Detector?.DebugDrawBoundingBoxes();
         }
     }
