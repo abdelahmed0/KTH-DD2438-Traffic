@@ -34,6 +34,8 @@ public class AIP2TrafficDrone : MonoBehaviour
 
     private Agent agent;
 
+    private float StuckTime = 1f; // Seconds after which to engage the backing up mechanism when stuck
+
     private static VOManager voManager = null;
     private static bool StaticInitDone = false;
     private static CollisionDetector m_Detector = null;
@@ -121,6 +123,13 @@ public class AIP2TrafficDrone : MonoBehaviour
         {
             return;
         }
+        if (StuckTime <= 0f)
+        {
+            StuckTime = 1f;
+            currentNodeIdx -= 20;
+        }
+        else if (my_rigidbody.velocity.magnitude < 0.1f)
+            StuckTime -= Time.fixedDeltaTime;
 
         CalculateTargets(lookaheadDistance:20f, 
             out Vector3 targetPosition, out Vector3 targetVelocity);
