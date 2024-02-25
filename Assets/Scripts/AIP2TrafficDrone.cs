@@ -35,6 +35,9 @@ public class AIP2TrafficDrone : MonoBehaviour
     private Agent agent;
 
     private float StuckTime = 1f; // Seconds after which to engage the backing up mechanism when stuck
+    private float RecoveryTime = 1f; // How many seconds to engage the backing up mechanism
+    private bool recoveryOn = false;
+    private Vector3 localGoal;
 
     private static VOManager voManager = null;
     private static bool StaticInitDone = false;
@@ -87,7 +90,7 @@ public class AIP2TrafficDrone : MonoBehaviour
         }
 
         var localStart = m_ObstacleMap.mapGrid.WorldToLocal(transform.position);
-        var localGoal = m_ObstacleMap.mapGrid.WorldToLocal(m_CurrentGoal.targetPosition);
+        localGoal = m_ObstacleMap.mapGrid.WorldToLocal(m_CurrentGoal.targetPosition);
 
         // Generate path with Hybrid A*
         currentNodeIdx = 0;
@@ -108,7 +111,7 @@ public class AIP2TrafficDrone : MonoBehaviour
         Vector3 old_wp = localStart;
         foreach (var wp in nodePath)
         {
-            Debug.DrawLine(m_ObstacleMap.mapGrid.LocalToWorld(old_wp), m_ObstacleMap.mapGrid.LocalToWorld(wp.LocalPosition), Color.green, 4f);
+            Debug.DrawLine(m_ObstacleMap.mapGrid.LocalToWorld(old_wp), m_ObstacleMap.mapGrid.LocalToWorld(wp.LocalPosition), Color.green, 1f);
             old_wp = wp.LocalPosition;
         }
 
@@ -120,16 +123,28 @@ public class AIP2TrafficDrone : MonoBehaviour
     private void FixedUpdate()
     {
         if (nodePath.Count == 0)
-        {
             return;
-        }
+
         if (StuckTime <= 0f)
         {
-            StuckTime = 1f;
-            currentNodeIdx -= 20;
+            StuckTime = 2f;
+            currentNodeIdx = LastVisibleNode();
+            recoveryOn = true;
         }
-        else if (my_rigidbody.velocity.magnitude < 0.1f)
+        else if(my_rigidbody.velocity.magnitude < 0.01f)
             StuckTime -= Time.fixedDeltaTime;
+        else
+            StuckTime = 2f;
+        
+        if (recoveryOn)
+        {
+            if (RecoveryTime <= 0f)
+            {
+                RecoveryTime = 3f;
+                recoveryOn = false;
+            }
+            RecoveryTime -= Time.fixedDeltaTime;
+        }
 
         CalculateTargets(lookaheadDistance:20f, 
             out Vector3 targetPosition, out Vector3 targetVelocity);
@@ -145,20 +160,20 @@ public class AIP2TrafficDrone : MonoBehaviour
             Vector3 avoidanceVelocity = Vec2To3(newVelocity);
             Vector3 avoidancePosition = transform.position + avoidanceVelocity;
 
-            PdControll(avoidancePosition, avoidanceVelocity);
+            PdControll(avoidancePosition, avoidanceVelocity, recoveryOn);
             // Debug.DrawLine(transform.position, transform.position + avoidanceVelocity, Color.green);
         }
         else
         {
-            PdControll(targetPosition, targetVelocity);
+            PdControll(targetPosition, targetVelocity, recoveryOn);
             // Debug.DrawLine(transform.position, transform.position + targetVelocity, Color.blue);
         }
 
-        // Debug.DrawLine(transform.position, targetPosition, Color.magenta);
+        Debug.DrawLine(transform.position, targetPosition, Color.magenta);
         // Debug.DrawLine(transform.position, transform.position + my_rigidbody.velocity, Color.black);
     }
 
-    private void PdControll(Vector3 targetPosition, Vector3 targetVelocity)
+    private void PdControll(Vector3 targetPosition, Vector3 targetVelocity, bool recoveryOn)
     {
         Vector3 current_position = transform.position;
 
@@ -169,16 +184,19 @@ public class AIP2TrafficDrone : MonoBehaviour
             return;
         }
 
-        for (int i = currentNodeIdx + 1; i < nodePath.Count; ++i)
+        if (!recoveryOn)
         {
-            float current_tracked_distance = Vector3.Distance(targetPosition, current_position);
-            float potential_tracked_distance = Vector3.Distance(nodePath[i].GetGlobalPosition(), current_position);
-            
-            if (current_tracked_distance > potential_tracked_distance)
+            for (int i = currentNodeIdx + 1; i < nodePath.Count; ++i)
             {
-                // found a closer point
-                currentNodeIdx = i;
-                return;
+                float current_tracked_distance = Vector3.Distance(targetPosition, current_position);
+                float potential_tracked_distance = Vector3.Distance(nodePath[i].GetGlobalPosition(), current_position);
+                
+                if (current_tracked_distance > potential_tracked_distance)
+                {
+                    // found a closer point
+                    currentNodeIdx = i;
+                    return;
+                }
             }
         }
         
@@ -196,9 +214,7 @@ public class AIP2TrafficDrone : MonoBehaviour
     private void CalculateTargets(float lookaheadDistance, out Vector3 targetPosition, out Vector3 targetVelocity)
     {
         AStarNode target = nodePath[currentNodeIdx];
-        AStarNode nextTarget = nodePath[Math.Min(currentNodeIdx + 1, nodePath.Count-1)];
         targetPosition = m_MapManager.grid.LocalToWorld(target.LocalPosition);
-        Vector3 nextTargetPosition = m_MapManager.grid.LocalToWorld(nextTarget.LocalPosition);
 
         Vector3 lookaheadPosition = PurePursuitTargetPosition(lookaheadDistance);
         Vector2 lookaheadPosition2d = new(lookaheadPosition.x, lookaheadPosition.z);
@@ -217,6 +233,9 @@ public class AIP2TrafficDrone : MonoBehaviour
         }
         else 
         {
+            AStarNode nextTarget = nodePath[Math.Min(currentNodeIdx + 1, nodePath.Count-1)];
+            Vector3 nextTargetPosition = m_MapManager.grid.LocalToWorld(nextTarget.LocalPosition);
+
             float targetSpeed = Mathf.Lerp(0f, m_Drone.max_speed, ((nextTargetPosition - targetPosition) / m_Drone.max_speed).magnitude);
             targetVelocity = (nextTargetPosition - targetPosition).normalized * targetSpeed;
         }
@@ -224,7 +243,7 @@ public class AIP2TrafficDrone : MonoBehaviour
 
     private Vector3 PurePursuitTargetPosition(float lookaheadDistance)
     {
-        for (int i = currentNodeIdx; i < nodePath.Count; i++)
+        for (int i = currentNodeIdx; i < nodePath.Count; ++i)
         {
             Vector3 pathNodePosition = nodePath[i].GetGlobalPosition();
             if (Vector3.Distance(transform.position, pathNodePosition) > lookaheadDistance)
@@ -234,6 +253,19 @@ public class AIP2TrafficDrone : MonoBehaviour
             }
         }
         return nodePath[^1].GetGlobalPosition(); // Return last node if none found within lookahead distance
+    }
+
+    private int LastVisibleNode()
+    {
+        for (int i = currentNodeIdx; i >= 0; --i)
+        {
+            Vector3 pathNodePosition = nodePath[i].GetGlobalPosition();
+            if (!m_Detector.LineCollision(Vec3To2(transform.position), pathNodePosition))
+            {
+                return i;
+            }
+        }
+        return Math.Max(0, currentNodeIdx - 100);
     }
 
     private void OnDrawGizmos() {

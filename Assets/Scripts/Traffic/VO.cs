@@ -50,12 +50,13 @@ namespace vo
             {
                 float lowerSpeedBound = Mathf.Clamp(agent.Velocity.magnitude - maxAccelaration * deltaTime, allowReversing ? -maxSpeed : 0f, maxSpeed);
                 float upperSpeedBound = Mathf.Clamp(agent.Velocity.magnitude + maxAccelaration * deltaTime, allowReversing ? -maxSpeed : 0f, maxSpeed);
-
-                float speedStep = (upperSpeedBound - lowerSpeedBound) / 3f;
+                
+                float speedStep = Mathf.Max((upperSpeedBound - lowerSpeedBound) / 3f, 0.1f);
                 for (float speed = lowerSpeedBound; speed <= upperSpeedBound; speed += speedStep)
                 {
                     Vector2 sampleVelocity = Quaternion.Euler(0, 0, alpha) * agent.Velocity.normalized * speed;
                     float penalty = Vector2.Distance(sampleVelocity, agent.DesiredVelocity);
+                    penalty += Vector2.Angle(sampleVelocity, agent.DesiredVelocity) / 180f; // Use angle for more stable paths
                     float minTimeToCollision = float.MaxValue;
 
                     // Check static obstacles
@@ -272,7 +273,7 @@ namespace vo
         // Draw agent velocity obstacles in velocity space
         public void DebugDraw(Agent agent)
         {
-            if (true)//(agent == agents[1]) //if (agent == agents[1] || agent == agents[agents.Count - 1])
+            if (agent == agents[1] || agent == agents[^1])
             {
                 var rvos = CalculateVelocityObstacles(agent);
                 foreach (var rvo in rvos)
