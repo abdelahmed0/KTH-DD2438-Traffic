@@ -56,7 +56,8 @@ public class GameManagerA2 : AbstractGameManager
         if (!isComplete)
         {
             completionTime = goals.Max(goals => goals.CurrentTime());
-        }
+        } else
+            Debug.Log("Completion time: " + completionTime);
 
         isComplete = goals.ToList().TrueForAll(goal => goal.IsAchieved());
     }
