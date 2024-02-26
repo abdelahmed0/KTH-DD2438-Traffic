@@ -5,7 +5,7 @@ using UnityEngine;
 
 namespace avoidance
 {
-    public class VOManager
+    public class CollisionManager
     {
         public static bool DebugOn = false;
 
@@ -13,7 +13,7 @@ namespace avoidance
 
         private List<Agent> agents;
 
-        public VOManager()
+        public CollisionManager()
         {
             agents = new List<Agent>();
         }
@@ -28,7 +28,7 @@ namespace avoidance
             agents.Find(a => a == toUpdate).Update(toCopy);
         }
 
-        public VOManager(CollisionAvoidanceAlgorithm collisionAvoidanceAlgorithm)
+        public CollisionManager(CollisionAvoidanceAlgorithm collisionAvoidanceAlgorithm)
         {
             this.collisionAvoidanceAlgorithm = collisionAvoidanceAlgorithm;
         }
@@ -36,6 +36,11 @@ namespace avoidance
         public void SetCollisionAvoidanceAlgorithm(CollisionAvoidanceAlgorithm collisionAvoidanceAlgorithm)
         {
             this.collisionAvoidanceAlgorithm = collisionAvoidanceAlgorithm;
+        }
+
+        public CollisionAvoidanceAlgorithm GetCollisionAvoidanceAlgorithm()
+        {
+            return collisionAvoidanceAlgorithm;
         }
 
         public Vector2 CalculateNewVelocity(Agent agent, float deltaTime, out bool isColliding)

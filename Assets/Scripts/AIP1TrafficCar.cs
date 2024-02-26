@@ -33,11 +33,12 @@ public class AIP1TrafficCar : MonoBehaviour
     private int currentNodeIdx;
     private HybridAStarGenerator pathFinder = null;
     public bool drawDebug = false;
-    private float StuckTime = 1f; // Seconds after which to engage the backing up mechanism when stuck
-
+    private float StuckTime = 2f; // Seconds after which to engage the backing up mechanism when stuck
+    private float RecoveryTime = 1f; // How many seconds to engage the backing up mechanism
+    private bool recoveryOn = false;
     private Agent agent;
 
-    private static VOManager voManager;
+    private static CollisionManager collisionManager;
     private static CollisionDetector m_Detector = null;
     private static bool StaticInitDone = false;
 
@@ -74,17 +75,17 @@ public class AIP1TrafficCar : MonoBehaviour
             Debug.Log($"Detector init: {sw.ElapsedMilliseconds} ms");
 
             // Init collision avoidance
-            CollisionAvoidanceAlgorithm collisionAlgorithm = new HRVOAlgorithm()
+            CollisionAvoidanceAlgorithm collisionAlgorithm = new RVOAlgorithm()
             {
                 maxSpeed = m_Car.MaxSpeed, 
                 maxAngle = m_Car.m_MaximumSteerAngle,
                 allowReversing = allowReversing,
-                maxAccelaration = 6f,
+                maxAccelaration = 3f,
                 Detector = m_Detector,
-                TimeLookAhead = 3f
+                TimeLookAhead = 2f
             };
-            voManager = new();
-            voManager.SetCollisionAvoidanceAlgorithm(collisionAlgorithm);
+            collisionManager = new();
+            collisionManager.SetCollisionAvoidanceAlgorithm(collisionAlgorithm);
 
             StaticInitDone = true;
             sw.Stop();
@@ -118,27 +119,38 @@ public class AIP1TrafficCar : MonoBehaviour
 
         // Initialize velocity obstacles for traffic
         agent = new Agent(Vec3To2(transform.position), Vec3To2(my_rigidbody.velocity), Vector3.zero, m_Collider.transform.localScale.z * colliderResizeFactor);
-        voManager.AddAgent(agent);
+        collisionManager.AddAgent(agent);
     }
 
 
     private void FixedUpdate()
     {
-        // TODO: VO RVO HRVO class refactoring
         // TODO: Fix Car collision avoidance
         // TODO: Fix HRVO?
 
         if (nodePath.Count == 0)
-        {
             return;
-        }
+
         if (StuckTime <= 0f)
         {
-            StuckTime = 1f;
-            currentNodeIdx = Math.Max(0, currentNodeIdx - 20);
+            StuckTime = 2f;
+            currentNodeIdx = LastVisibleNode();
+            recoveryOn = true;
         }
-        else if (my_rigidbody.velocity.magnitude < 0.1f)
+        else if(my_rigidbody.velocity.magnitude < 0.1f)
             StuckTime -= Time.fixedDeltaTime;
+        else
+            StuckTime = 2f;
+        
+        if (recoveryOn)
+        {
+            if (RecoveryTime <= 0f)
+            {
+                RecoveryTime = 3f;
+                recoveryOn = false;
+            }
+            RecoveryTime -= Time.fixedDeltaTime;
+        }
 
         CalculateTargets(lookaheadDistance:20f, 
             out Vector3 targetPosition, out Vector3 targetVelocity);
@@ -146,7 +158,10 @@ public class AIP1TrafficCar : MonoBehaviour
         float avoidanceRadius = colliderResizeFactor * m_Collider.transform.localScale.z;
         agent.Update(new Agent(Vec3To2(transform.position), Vec3To2(my_rigidbody.velocity), Vec3To2(targetVelocity), avoidanceRadius));
 
-        Vector2 newVelocity = voManager.CalculateNewVelocity(agent, Time.fixedDeltaTime, out bool isColliding);
+        // Update possible angle based on current velocity
+        collisionManager.GetCollisionAvoidanceAlgorithm().maxAngle = Mathf.LerpAngle(0.1f, m_Car.m_MaximumSteerAngle, m_Car.MaxSpeed - my_rigidbody.velocity.magnitude);
+
+        Vector2 newVelocity = collisionManager.CalculateNewVelocity(agent, Time.fixedDeltaTime, out bool isColliding);
 
         if (isColliding)
         {
@@ -247,10 +262,23 @@ public class AIP1TrafficCar : MonoBehaviour
         return nodePath[^1].GetGlobalPosition(); // Return last node if none found within lookahead distance
     }
 
+    private int LastVisibleNode()
+    {
+        for (int i = currentNodeIdx; i >= 0; --i)
+        {
+            Vector3 pathNodePosition = nodePath[i].GetGlobalPosition();
+            if (!m_Detector.LineCollision(Vec3To2(transform.position), pathNodePosition))
+            {
+                return i;
+            }
+        }
+        return Math.Max(0, currentNodeIdx - 100);
+    }
+
     private void OnDrawGizmos() {
         if (drawDebug)
         {
-            voManager?.DrawDebug(agent);
+            collisionManager?.DrawDebug(agent);
             // m_Detector?.DebugDrawBoundingBoxes();
         }
         // if (drawDebug && pathFinder != null && pathFinder.flowField != null)

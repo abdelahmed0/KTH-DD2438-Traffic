@@ -1,10 +1,8 @@
 
 using System.Collections.Generic;
-using System.Linq;
-using PathPlanning;
 using UnityEngine;
 
-namespace avoidance 
+namespace avoidance
 {
     public class HRVOAlgorithm : CollisionAvoidanceAlgorithm
     {

@@ -1,7 +1,5 @@
 
 using System.Collections.Generic;
-using System.Linq;
-using PathPlanning;
 using UnityEngine;
 
 namespace avoidance
@@ -18,7 +16,7 @@ namespace avoidance
             Vector2 newVelocity = Vector2.positiveInfinity;
             float minPenalty = float.MaxValue;
             float angleStep = 5;
-            float w = 1f; // Aggressiveness factor, lower is more aggressive since collisions are penalized less
+            float w = 5f; // Aggressiveness factor, lower is more aggressive since collisions are penalized less
             isColliding = false;
 
             // Sample in VO space around wanted velocity
@@ -32,6 +30,7 @@ namespace avoidance
                 {
                     Vector2 sampleVelocity = Quaternion.Euler(0, 0, alpha) * agent.Velocity.normalized * speed;
                     float penalty = Vector2.Distance(sampleVelocity, agent.DesiredVelocity);
+                    penalty += Vector2.Angle(sampleVelocity, agent.DesiredVelocity) / 180f; // Use angle for more stable paths
                     float minTimeToCollision = float.MaxValue;
 
                     // Check static obstacles

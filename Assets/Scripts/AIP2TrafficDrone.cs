@@ -39,7 +39,7 @@ public class AIP2TrafficDrone : MonoBehaviour
     private bool recoveryOn = false;
     private Vector3 localGoal;
 
-    private static VOManager voManager = null;
+    private static CollisionManager voManager = null;
     private static bool StaticInitDone = false;
     private static CollisionDetector m_Detector = null;
 
@@ -85,7 +85,7 @@ public class AIP2TrafficDrone : MonoBehaviour
                 TimeLookAhead = 2f
             };
 
-            voManager = new VOManager();
+            voManager = new CollisionManager();
             voManager.SetCollisionAvoidanceAlgorithm(collisionAlgorithm);
 
             StaticInitDone = true;
