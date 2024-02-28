@@ -21,7 +21,7 @@ public class AIP3FormationCar : MonoBehaviour
     private Vector3 targetVelocity;
     public float k_p = 2f;
     public float k_d = 3f;
-    public float gatePaddingMagnitude = 1f;
+    private float gatePaddingMagnitude = 3f;
     public float followThrough = 1.5f;
     
     private CarController m_Car; 
@@ -64,6 +64,12 @@ public class AIP3FormationCar : MonoBehaviour
     private float ghostLeader = 4f;
 
     private Vector3 tgt = new Vector3(0, 0, 0);
+    
+    private Vector3 height = new Vector3(0, 1, 0);
+
+    private Vector3 ghostPos = new Vector3(0, 0, 0);
+
+    private float velocity = 10f;
     
     
     private void Start()
@@ -151,6 +157,7 @@ public class AIP3FormationCar : MonoBehaviour
         Quaternion rotation = gateGroup[0].transform.rotation * Quaternion.Euler(0, 180f, 0);
         Vector3 padding = new Vector3(gatePaddingMagnitude, 0, 0);
         padding = rotation * padding;
+        Debug.DrawLine(pathSet[0, 1], pathSet[0, 1] + padding, Color.magenta, 100f);
         pathSet[0, 1] += padding;
 
         if (!isLeader)
@@ -359,16 +366,16 @@ public class AIP3FormationCar : MonoBehaviour
             
             // Debug.DrawLine(path[currPathIdx], path[currPathIdx + 1], Color.red);
             // Debug.DrawLine(leaderPosition, leaderPosition + relativePosition, Color.yellow);
-            Vector3 height = new Vector3(0, 5, 0);
             // Debug.DrawLine(transform.position + height, targetPosition + height, Color.yellow);
-            padding = Vector3.Normalize(transform.forward) * ghostLeader;
+            padding = Vector3.Normalize(lineDir) * ghostLeader;
+            ghostPos = targetPosition + padding;
         }
 
         // Vector3 targetPosition = path[currPathIdx];
 
-        Debug.DrawLine(transform.position, targetPosition, Color.cyan);
+        // Debug.DrawLine(transform.position, targetPosition, Color.cyan);
         
-        PdControllSimple(targetPosition, 10, padding);
+        PdControllSimple(targetPosition, velocity, padding);
         
         // PdControll(targetPosition, targetVelocity);
         
@@ -502,8 +509,6 @@ public class AIP3FormationCar : MonoBehaviour
     {
         // throw new NotImplementedException();
         
-        Vector3 height = new Vector3(0, 1, 0);
-
         // Draw car paths
         for (int i = 0; i < pathSet.GetLength(0); i++)
         {
@@ -532,6 +537,15 @@ public class AIP3FormationCar : MonoBehaviour
         //     Gizmos.color = Color.black;
         //     Gizmos.DrawLine(l + height, r + height);
         // }
+        // if (!isLeader)
+        // {
+        //     // Gizmos.color = Color.black;
+        //     // Gizmos.DrawLine(leaderPosition + height, leaderPosition + relativePosition + height);
+        //     Gizmos.color = Color.magenta;
+        //     // Gizmos.DrawSphere(leaderPosition + relativePosition + height, 0.5f);
+        //     Gizmos.DrawSphere(tgt + height, 0.5f);
+        // }
+        
         if (!isLeader)
         {
             // Gizmos.color = Color.black;
@@ -539,6 +553,15 @@ public class AIP3FormationCar : MonoBehaviour
             Gizmos.color = Color.magenta;
             // Gizmos.DrawSphere(leaderPosition + relativePosition + height, 0.5f);
             Gizmos.DrawSphere(tgt + height, 0.5f);
+            
+            Gizmos.color = Color.cyan;
+            Gizmos.DrawLine(transform.position + height, tgt + height);
+            
+            Gizmos.color = Color.white;
+            Gizmos.DrawSphere(ghostPos + height, 0.5f);
+            
+            Gizmos.color = Color.yellow;
+            Gizmos.DrawLine(transform.position + height, ghostPos + height);
         }
     }
 }
