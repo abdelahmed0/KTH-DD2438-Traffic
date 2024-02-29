@@ -75,7 +75,7 @@ public class AIP2TrafficDrone : MonoBehaviour
             Debug.Log($"Detector init: {sw.ElapsedMilliseconds} ms");
 
             // Init collision avoidance
-            CollisionAvoidanceAlgorithm collisionAlgorithm = new HRVOAlgorithm()
+            CollisionAvoidanceAlgorithm collisionAlgorithm = new HRVODroneAlgorithm()
             {
                 maxSpeed = m_Drone.max_speed,
                 maxAngle = 40f,
@@ -263,7 +263,7 @@ public class AIP2TrafficDrone : MonoBehaviour
         for (int i = currentNodeIdx; i >= 0; --i)
         {
             Vector3 pathNodePosition = nodePath[i].GetGlobalPosition();
-            if (!m_Detector.LineCollision(Vec3To2(transform.position), pathNodePosition))
+            if (!m_Detector.LineCollision(Vec3To2(transform.position), Vec3To2(pathNodePosition)))
             {
                 return i;
             }

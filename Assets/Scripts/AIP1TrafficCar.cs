@@ -36,6 +36,7 @@ public class AIP1TrafficCar : MonoBehaviour
     private float StuckTime = 2f; // Seconds after which to engage the backing up mechanism when stuck
     private float RecoveryTime = 1f; // How many seconds to engage the backing up mechanism
     private bool recoveryOn = false;
+    private const float maxSpeed = 10f;
     private Agent agent;
 
     private static CollisionManager collisionManager;
@@ -75,9 +76,9 @@ public class AIP1TrafficCar : MonoBehaviour
             Debug.Log($"Detector init: {sw.ElapsedMilliseconds} ms");
 
             // Init collision avoidance
-            CollisionAvoidanceAlgorithm collisionAlgorithm = new RVOAlgorithm()
+            CollisionAvoidanceAlgorithm collisionAlgorithm = new HRVOCarAlgorithm()
             {
-                maxSpeed = m_Car.MaxSpeed, 
+                maxSpeed = maxSpeed, 
                 maxAngle = m_Car.m_MaximumSteerAngle,
                 allowReversing = allowReversing,
                 maxAccelaration = 3f,
@@ -125,6 +126,7 @@ public class AIP1TrafficCar : MonoBehaviour
 
     private void FixedUpdate()
     {
+        // TODO: Fix car avoidance velocity; is way too high for some reason
         // TODO: Fix Car collision avoidance
         // TODO: Fix HRVO?
 
@@ -134,10 +136,10 @@ public class AIP1TrafficCar : MonoBehaviour
         if (StuckTime <= 0f)
         {
             StuckTime = 2f;
-            currentNodeIdx = LastVisibleNode();
+            currentNodeIdx = GetVisibleNode();
             recoveryOn = true;
         }
-        else if(my_rigidbody.velocity.magnitude < 0.1f)
+        else if(my_rigidbody.velocity.magnitude < 10f)
             StuckTime -= Time.fixedDeltaTime;
         else
             StuckTime = 2f;
@@ -158,9 +160,6 @@ public class AIP1TrafficCar : MonoBehaviour
         float avoidanceRadius = colliderResizeFactor * m_Collider.transform.localScale.z;
         agent.Update(new Agent(Vec3To2(transform.position), Vec3To2(my_rigidbody.velocity), Vec3To2(targetVelocity), avoidanceRadius));
 
-        // Update possible angle based on current velocity
-        collisionManager.GetCollisionAvoidanceAlgorithm().maxAngle = Mathf.LerpAngle(0.1f, m_Car.m_MaximumSteerAngle, m_Car.MaxSpeed - my_rigidbody.velocity.magnitude);
-
         Vector2 newVelocity = collisionManager.CalculateNewVelocity(agent, Time.fixedDeltaTime, out bool isColliding);
 
         if (isColliding)
@@ -178,7 +177,7 @@ public class AIP1TrafficCar : MonoBehaviour
             Debug.DrawLine(transform.position, transform.position + targetVelocity, Color.blue);
         }
 
-        // Debug.DrawLine(transform.position, targetPosition, Color.magenta);
+        Debug.DrawLine(transform.position, targetPosition, Color.magenta);
         // Debug.DrawLine(transform.position, transform.position + my_rigidbody.velocity, Color.black);
 
     }
@@ -235,15 +234,15 @@ public class AIP1TrafficCar : MonoBehaviour
             Vector2 directionToLookhead = (lookaheadPosition2d - position2d).normalized;
 
             float lookaheadAngle = Vector2.Angle(directionToLookhead, currentDirection);
-            float targetSpeed = Mathf.Lerp(0f, m_Car.MaxSpeed, 1f - Mathf.Clamp01(lookaheadAngle / 60f));
+            float targetSpeed = Mathf.Lerp(0.001f, maxSpeed, 1f - Mathf.Clamp01(lookaheadAngle / 180f));
             targetVelocity = (lookaheadPosition - targetPosition).normalized * targetSpeed;
         }
-        else 
+        else
         { 
             AStarNode nextTarget = nodePath[Math.Min(currentNodeIdx + 1, nodePath.Count-1)];
             Vector3 nextTargetPosition = m_MapManager.grid.LocalToWorld(nextTarget.LocalPosition);
 
-            float targetSpeed = Mathf.Lerp(0f, m_Car.MaxSpeed, ((nextTargetPosition - targetPosition) / m_Car.MaxSpeed).magnitude);
+            float targetSpeed = Mathf.Lerp(0f, maxSpeed, ((nextTargetPosition - targetPosition) / maxSpeed).magnitude);
             targetVelocity = (nextTargetPosition - targetPosition).normalized * targetSpeed;
         }
     }
@@ -262,12 +261,19 @@ public class AIP1TrafficCar : MonoBehaviour
         return nodePath[^1].GetGlobalPosition(); // Return last node if none found within lookahead distance
     }
 
-    private int LastVisibleNode()
+    private int GetVisibleNode()
     {
-        for (int i = currentNodeIdx; i >= 0; --i)
+        for (int i = nodePath.Count - 1; i >= 0; --i)
         {
-            Vector3 pathNodePosition = nodePath[i].GetGlobalPosition();
-            if (!m_Detector.LineCollision(Vec3To2(transform.position), pathNodePosition))
+            Vector2 pathNodePosition = Vec3To2(nodePath[i].GetGlobalPosition());
+            Vector2 currentPosition = Vec3To2(transform.position);
+            Vector2 direction = (pathNodePosition - currentPosition).normalized;
+
+            // Disregard sideways nodes since car cannot drive to those
+            float acceptableAngleDiff = 10f;
+            if (!m_Detector.LineCollision(currentPosition, pathNodePosition)
+                && (Vector2.Angle(transform.forward, direction) > 90 + acceptableAngleDiff 
+                    || Vector2.Angle(transform.forward, direction) < 90 - acceptableAngleDiff)) 
             {
                 return i;
             }
