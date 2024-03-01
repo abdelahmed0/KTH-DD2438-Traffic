@@ -47,12 +47,26 @@ namespace avoidance
         public bool ContainsVelocity(Vector2 velocity)
         {
             Vector2 velocityInVoSpace = velocity - apex;
-            float theta = Vector2.Angle(Vector2.right, velocityInVoSpace);
+            // Calculate signed angles from apex to bounds and velocity vector
+            float angleToLeftBound = Vector2.SignedAngle(Vector2.right, boundLeft - apex);
+            float angleToRightBound = Vector2.SignedAngle(Vector2.right, boundRight - apex);
+            float angleToVelocity = Vector2.SignedAngle(Vector2.right, velocityInVoSpace);
 
-            float thetaRight = Vector2.Angle(boundRight, Vector2.right);
-            float thetaLeft = Vector2.Angle(boundLeft, Vector2.right);
+            // Normalize angles to range [0, 360)
+            angleToLeftBound = NormalizeAngle(angleToLeftBound);
+            angleToRightBound = NormalizeAngle(angleToRightBound);
+            angleToVelocity = NormalizeAngle(angleToVelocity);
 
-            return InBetween(thetaRight, theta, thetaLeft);
+            // Check if angleToVelocity is between angleToLeftBound and angleToRightBound
+            if (angleToLeftBound < angleToRightBound)
+            {
+                return angleToVelocity >= angleToLeftBound && angleToVelocity <= angleToRightBound;
+            }
+            else
+            {
+                // If bounds cross the 0-degree line, we need to handle wrap-around
+                return angleToVelocity >= angleToLeftBound || angleToVelocity <= angleToRightBound;
+            }
         }
 
         private bool InBetween(float thetaRight, float thetaDif, float thetaLeft)

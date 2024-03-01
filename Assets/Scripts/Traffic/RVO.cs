@@ -7,7 +7,7 @@ namespace avoidance
     public class RVOCarAlgorithm : CollisionAvoidanceAlgorithm
     {
 
-        public override Vector2 CalculateNewVelocity(Agent agent, float deltaTime, List<Agent> agents, out bool isColliding)
+        public override Vector2 CalculateNewVelocity(Agent agent, List<Agent> agents, out bool isColliding)
         {
             // RVO: VO apex is translated by alpha from velocity B to velocity A
             float rvoAlpha = 0.5f;
@@ -93,7 +93,7 @@ namespace avoidance
                 foreach (var rvo in rvos)
                 {
                     // Draw RVO
-                    var avoidanceVelocity = CalculateNewVelocity(agent, Time.fixedDeltaTime, agents, out bool isColliding);
+                    var avoidanceVelocity = CalculateNewVelocity(agent, agents, out bool isColliding);
                     if (isColliding)
                     {
                         Gizmos.color = Color.yellow;
@@ -129,28 +129,45 @@ namespace avoidance
     public class RVODroneAlgorithm : CollisionAvoidanceAlgorithm
     {
 
-        public override Vector2 CalculateNewVelocity(Agent agent, float deltaTime, List<Agent> agents, out bool isColliding)
+        public override Vector2 CalculateNewVelocity(Agent agent, List<Agent> agents, out bool isColliding)
         {
             // RVO: VO apex is translated by alpha from velocity B to velocity A
             float rvoAlpha = 0.5f;
-            List<VelocityObstacle> rvos = CalculateVelocityObstacles(agent, agents, rvoAlpha);
+            float speedSamples = 3f; // per orientation
+            const float angleSamples = 3f;
+            float w = 1f; // Aggressiveness factor, lower is more aggressive since collisions are penalized less
 
+            List<VelocityObstacle> rvos = CalculateVelocityObstacles(agent, agents, rvoAlpha);
             Vector2 newVelocity = Vector2.positiveInfinity;
             float minPenalty = float.MaxValue;
-            float angleStep = 5;
-            float w = 5f; // Aggressiveness factor, lower is more aggressive since collisions are penalized less
             isColliding = false;
+
+            float lowerSpeedBound = Mathf.Clamp(agent.Velocity.magnitude - maxAccelaration, allowReversing ? -maxSpeed : 0f, maxSpeed);
+            float upperSpeedBound = Mathf.Clamp(agent.Velocity.magnitude + maxAccelaration, allowReversing ? -maxSpeed : 0f, maxSpeed);
+            
+            lowerSpeedBound = -maxSpeed;
+            upperSpeedBound = maxSpeed;
+
+            float speedStep = Mathf.Max(1f, (upperSpeedBound - lowerSpeedBound) / speedSamples);
+            float angleStep = Mathf.Max(1f, maxAngle / angleSamples);
 
             // Sample in VO space around wanted velocity
             for (float alpha = -maxAngle; alpha <= maxAngle; alpha += angleStep)
             {
-                float lowerSpeedBound = Mathf.Clamp(agent.Velocity.magnitude - maxAccelaration * deltaTime, allowReversing ? -maxSpeed : 0f, maxSpeed);
-                float upperSpeedBound = Mathf.Clamp(agent.Velocity.magnitude + maxAccelaration * deltaTime, allowReversing ? -maxSpeed : 0f, maxSpeed);
-
-                float speedStep = (upperSpeedBound - lowerSpeedBound) / 5f;
                 for (float speed = lowerSpeedBound; speed <= upperSpeedBound; speed += speedStep)
                 {
-                    Vector2 sampleVelocity = Quaternion.Euler(0, 0, alpha) * agent.Velocity.normalized * speed;
+                    Vector2 direction;
+                    if (agent.Velocity.magnitude > Mathf.Epsilon)
+                    {
+                        direction = agent.Velocity.normalized;
+                    }
+                    else
+                    {
+                        // If current velocity is almost zero, use desired velocity direction or a default direction if that's also zero
+                        direction = agent.DesiredVelocity.magnitude > Mathf.Epsilon ? agent.DesiredVelocity.normalized : Vector2.up;
+                    }
+                    Vector2 sampleVelocity = Quaternion.Euler(0, 0, alpha) * direction * speed;
+
                     float penalty = Vector2.Distance(sampleVelocity, agent.DesiredVelocity);
                     penalty += Vector2.Angle(sampleVelocity, agent.DesiredVelocity) / 180f; // Use angle for more stable paths
                     float minTimeToCollision = float.MaxValue;
@@ -195,30 +212,35 @@ namespace avoidance
         // Draw agent velocity obstacles in velocity space
         public override void DrawDebug(Agent agent, List<Agent> agents)
         {
-            if (agent == agents[1] || agent == agents[^1])
+            if (agent == agents[0])// || agent == agents[^1])
             {
                 var rvos = CalculateVelocityObstacles(agent, agents);
                 foreach (var rvo in rvos)
                 {
                     // Draw RVO
-                    var avoidanceVelocity = CalculateNewVelocity(agent, Time.fixedDeltaTime, agents, out bool isColliding);
+                    Gizmos.color = Color.grey;
+
+                    bool isRight = rvo.VelocityRightOfCenterLine(agent.Velocity);
+
+                    var avoidanceVelocity = CalculateNewVelocity(agent, agents, out bool isColliding);
                     if (isColliding)
                     {
                         Gizmos.color = Color.yellow;
                         Gizmos.DrawSphere(Vec2To3(agent.Position + avoidanceVelocity), 1f);
                     }
-
-                    Gizmos.color = Color.grey;
-                    if (rvo.ContainsVelocity(rvo.agentB.Velocity) 
-                        && rvo.CollisionTimeFromVelocity(rvo.agentB.Velocity) < TimeLookAhead)
+                    
+                    Gizmos.color = new Color(1f, 1f, 1f, 0.7f);
+                    if (rvo.ContainsVelocity(agent.Velocity)
+                            && rvo.CollisionTimeFromVelocity(agent.Velocity) < TimeLookAhead)
                     {
-                        Vector2 boundLeftWorld = rvo.apex + rvo.boundLeft * TimeLookAhead;
-                        Vector2 boundRightWorld = rvo.apex + rvo.boundRight * TimeLookAhead;
+                        Vector2 boundLeftWorld =  rvo.boundLeft * TimeLookAhead + rvo.apex;
+                        Vector2 boundRightWorld = rvo.boundRight * TimeLookAhead + rvo.apex;
                         
                         DrawTriangle(agent.Position + rvo.apex, // Offset to be closer over agent
-                                     agent.Position + boundLeftWorld.normalized,
-                                     agent.Position + boundRightWorld.normalized);
+                                    agent.Position + boundLeftWorld,
+                                    agent.Position + boundRightWorld);
                     }
+
                 }
 
                 Gizmos.color = Color.green;

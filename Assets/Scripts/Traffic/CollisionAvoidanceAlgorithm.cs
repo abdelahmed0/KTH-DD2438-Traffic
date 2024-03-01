@@ -17,7 +17,7 @@ namespace avoidance
         public CollisionDetector Detector = null;
     
 
-        abstract public Vector2 CalculateNewVelocity(Agent agent, float deltaTime, List<Agent> agents, out bool isColliding);
+        abstract public Vector2 CalculateNewVelocity(Agent agent, List<Agent> agents, out bool isColliding);
         abstract public void DrawDebug(Agent agent, List<Agent> agents);
 
 

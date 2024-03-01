@@ -126,9 +126,11 @@ public class AIP1TrafficCar : MonoBehaviour
 
     private void FixedUpdate()
     {
+        // TODO: Use drone HRVO or copy and change to fit for car
+        // TODO: Speed bounds in HRVO??
+        // TODO: Better controller
         // TODO: Fix car avoidance velocity; is way too high for some reason
         // TODO: Fix Car collision avoidance
-        // TODO: Fix HRVO?
 
         if (nodePath.Count == 0)
             return;
@@ -160,7 +162,7 @@ public class AIP1TrafficCar : MonoBehaviour
         float avoidanceRadius = colliderResizeFactor * m_Collider.transform.localScale.z;
         agent.Update(new Agent(Vec3To2(transform.position), Vec3To2(my_rigidbody.velocity), Vec3To2(targetVelocity), avoidanceRadius));
 
-        Vector2 newVelocity = collisionManager.CalculateNewVelocity(agent, Time.fixedDeltaTime, out bool isColliding);
+        Vector2 newVelocity = collisionManager.CalculateNewVelocity(agent, out bool isColliding);
 
         if (isColliding)
         {

@@ -155,7 +155,7 @@ public class AIP2TrafficDrone : MonoBehaviour
         float avoidanceRadius = colliderResizeFactor * m_Collider.radius;
         agent.Update(new Agent(Vec3To2(transform.position), Vec3To2(my_rigidbody.velocity), Vec3To2(targetVelocity), avoidanceRadius));
 
-        Vector2 newVelocity = voManager.CalculateNewVelocity(agent, Time.fixedDeltaTime, out bool isColliding);
+        Vector2 newVelocity = voManager.CalculateNewVelocity(agent, out bool isColliding);
 
         if (isColliding)
         {

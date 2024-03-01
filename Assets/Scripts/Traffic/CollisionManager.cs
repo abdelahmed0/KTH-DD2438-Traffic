@@ -43,9 +43,9 @@ namespace avoidance
             return collisionAvoidanceAlgorithm;
         }
 
-        public Vector2 CalculateNewVelocity(Agent agent, float deltaTime, out bool isColliding)
+        public Vector2 CalculateNewVelocity(Agent agent, out bool isColliding)
         {
-            return collisionAvoidanceAlgorithm.CalculateNewVelocity(agent, deltaTime, agents, out isColliding);
+            return collisionAvoidanceAlgorithm.CalculateNewVelocity(agent, agents, out isColliding);
         }
 
         public void DrawDebug(Agent agent)
