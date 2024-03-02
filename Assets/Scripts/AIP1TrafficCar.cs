@@ -83,7 +83,7 @@ public class AIP1TrafficCar : MonoBehaviour
                 allowReversing = allowReversing,
                 maxAccelaration = 3f,
                 Detector = m_Detector,
-                TimeLookAhead = 2f
+                TimeLookAhead = 4f
             };
             collisionManager = new();
             collisionManager.SetCollisionAvoidanceAlgorithm(collisionAlgorithm);
@@ -126,6 +126,8 @@ public class AIP1TrafficCar : MonoBehaviour
 
     private void FixedUpdate()
     {
+        // TODO: Apply and try static obstacle fix to drone
+        // TODO: Think about desired velocity fore the collision avoidance
         // TODO: Use drone HRVO or copy and change to fit for car
         // TODO: Speed bounds in HRVO??
         // TODO: Better controller
@@ -156,10 +158,10 @@ public class AIP1TrafficCar : MonoBehaviour
             RecoveryTime -= Time.fixedDeltaTime;
         }
 
-        CalculateTargets(lookaheadDistance:20f, 
+        CalculateTargets(lookaheadDistance:20f,
             out Vector3 targetPosition, out Vector3 targetVelocity);
 
-        float avoidanceRadius = colliderResizeFactor * m_Collider.transform.localScale.z;
+        float avoidanceRadius = 1f/5f * m_Collider.transform.localScale.z; // FIXME: localscale should give car length, but is somehow way too large
         agent.Update(new Agent(Vec3To2(transform.position), Vec3To2(my_rigidbody.velocity), Vec3To2(targetVelocity), avoidanceRadius));
 
         Vector2 newVelocity = collisionManager.CalculateNewVelocity(agent, out bool isColliding);

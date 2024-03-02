@@ -10,9 +10,9 @@ namespace avoidance
         {
             List<VelocityObstacle> rvos = CalculateVelocityObstacles(agent, agents, 0.5f);
 
-            float speedSamples = 3f; // per orientation
+            const float speedSamples = 3f;
             const float angleSamples = 3f;
-            float w = 10f; // Aggressiveness factor, lower is more aggressive since collisions are penalized less
+            const float w = 10f; // Aggressiveness factor, lower is more aggressive since collisions are penalized less
 
             Vector2 newVelocity = Vector2.positiveInfinity;
             float minPenalty = float.MaxValue;
@@ -48,9 +48,9 @@ namespace avoidance
                     float minTimeToCollision = float.MaxValue;
 
                     // Check static obstacles
-                    if (Detector.LineCollision(agent.Position, agent.Position + sampleVelocity.normalized * st_TimeLookaHead))
+                    if (Detector.LineCollision(agent.Position, agent.Position + sampleVelocity * st_TimeLookaHead))
                     {
-                        // Debug.DrawLine(Vec2To3(agent.Position), Vec2To3(agent.Position + sampleVelocity.normalized * st_TimeLookaHead), Color.magenta);
+                        // Debug.DrawLine(Vec2To3(agent.Position), Vec2To3(agent.Position + sampleVelocity * st_TimeLookaHead), Color.white);
                         continue;
                     } else
                     {
@@ -193,13 +193,16 @@ namespace avoidance
 
             float speedSamples = 3f; // per orientation
             const float angleSamples = 3f;
-            float w = 10f; // Aggressiveness factor, lower is more aggressive since collisions are penalized less
+            float w = 1f; // Aggressiveness factor, lower is more aggressive since collisions are penalized less
 
             Vector2 newVelocity = Vector2.positiveInfinity;
             float minPenalty = float.MaxValue;
             float lowerSpeedBound = Mathf.Clamp(agent.Velocity.magnitude - maxAccelaration, allowReversing ? -maxSpeed : 0f, maxSpeed);
             float upperSpeedBound = Mathf.Clamp(agent.Velocity.magnitude + maxAccelaration, allowReversing ? -maxSpeed : 0f, maxSpeed);
             
+            lowerSpeedBound = -maxSpeed;
+            upperSpeedBound = maxSpeed;
+
             float speedStep = Mathf.Max(1f, (upperSpeedBound - lowerSpeedBound) / speedSamples);
             float angleStep = Mathf.Max(1f, maxAngle / angleSamples);
             
@@ -226,11 +229,17 @@ namespace avoidance
                     float minTimeToCollision = float.MaxValue;
 
                     // Check static obstacles
-                    if (Detector.LineCollision(agent.Position, agent.Position + sampleVelocity.normalized * st_TimeLookaHead))
+                    if (Detector.LineCollision(agent.Position, agent.Position + sampleVelocity * st_TimeLookaHead))
                     {
-                        // Debug.DrawLine(Vec2To3(agent.Position), Vec2To3(agent.Position + sampleVelocity.normalized * st_TimeLookaHead), Color.magenta);
+                        // Debug.DrawLine(Vec2To3(agent.Position), Vec2To3(agent.Position + sampleVelocity * st_TimeLookaHead), Color.white);
                         continue;
+                    } else
+                    {
+                        Debug.DrawLine(new Vector3(agent.Position.x, 0.1f, agent.Position.y),
+                            new Vector3(agent.Position.x + sampleVelocity.x, 0.1f, agent.Position.y + sampleVelocity.y),
+                            new Color(1f, 0f, 0f, 0.1f));
                     }
+
                     // Check velocity obstacles
                     foreach (VelocityObstacle rvo in rvos)
                     {
@@ -303,44 +312,43 @@ namespace avoidance
         // Draw agent velocity obstacles in velocity space
         public override void DrawDebug(Agent agent, List<Agent> agents)
         {
-            if (agent == agents[1] || agent == agents[^1])
+            if (agent == agents[0])// || agent == agents[13])
             {
                 var rvos = CalculateVelocityObstacles(agent, agents);
                 foreach (var rvo in rvos)
                 {
-                    // Draw RVO
-                    Gizmos.color = Color.grey;
+                    // // Draw RVO
+                    // Gizmos.color = new Color(189f, 195f, 199f, 0.7f); // grey
 
-                    if (rvo.ContainsVelocity(rvo.agentB.Velocity) 
-                        && rvo.CollisionTimeFromVelocity(rvo.agentB.Velocity) < TimeLookAhead)
-                    {
-                        Vector2 boundLeftWorld = rvo.apex + rvo.boundLeft * TimeLookAhead;
-                        Vector2 boundRightWorld = rvo.apex + rvo.boundRight * TimeLookAhead;
+                    // if (rvo.ContainsVelocity(rvo.agentB.Velocity) 
+                    //     && rvo.CollisionTimeFromVelocity(rvo.agentB.Velocity) < TimeLookAhead)
+                    // {
+                    //     Vector2 boundLeftWorld = rvo.boundLeft * TimeLookAhead + rvo.apex;
+                    //     Vector2 boundRightWorld = rvo.boundRight * TimeLookAhead + rvo.apex;
                         
-                        DrawTriangle(agent.Position + rvo.apex, // Offset to be closer over agent
-                                    agent.Position + boundLeftWorld,
-                                    agent.Position + boundRightWorld);
-                    }
+                    //     DrawTriangle(agent.Position + rvo.apex, // Offset to be closer over agent
+                    //                 agent.Position + boundLeftWorld,
+                    //                 agent.Position + boundRightWorld);
+                    // }
 
                     // Draw HRVO
-                    Gizmos.color = Color.cyan;
-
                     bool isRight = rvo.VelocityRightOfCenterLine(agent.Velocity);
                     VelocityObstacle hrvo = ConstructHRVO(rvo, isRight);
+
+                    var avoidanceVelocity = CalculateNewVelocity(agent, agents, out bool isColliding);
+                    Gizmos.color = Color.yellow;
+                    Gizmos.DrawSphere(Vec2To3(agent.Position + avoidanceVelocity), 1f);
                     
-                    if (hrvo.ContainsVelocity(hrvo.agentB.Velocity) 
-                        && hrvo.CollisionTimeFromVelocity(hrvo.agentB.Velocity) < TimeLookAhead)
+                    Gizmos.color = new Color(0f, 1f, 1f, 0.7f); // cyan
+                    if (hrvo.ContainsVelocity(agent.Velocity)
+                            && hrvo.CollisionTimeFromVelocity(agent.Velocity) < TimeLookAhead)
                     {
-                        Vector2 boundLeftWorld = hrvo.apex + hrvo.boundLeft * TimeLookAhead;
-                        Vector2 boundRightWorld = hrvo.apex + hrvo.boundRight * TimeLookAhead;
+                        Vector2 boundLeftWorld =  hrvo.boundLeft * TimeLookAhead + hrvo.apex;
+                        Vector2 boundRightWorld = hrvo.boundRight * TimeLookAhead + hrvo.apex;
                         
                         DrawTriangle(agent.Position + hrvo.apex, // Offset to be closer over agent
-                                     agent.Position + boundLeftWorld.normalized,
-                                     agent.Position + boundRightWorld.normalized);
-                        
-                        var avoidanceVelocity = CalculateNewVelocity(agent, agents, out bool isColliding);
-                        Gizmos.color = Color.yellow;
-                        Gizmos.DrawSphere(Vec2To3(agent.Position + avoidanceVelocity), 1f);
+                                    agent.Position + boundLeftWorld,
+                                    agent.Position + boundRightWorld);
                     }
 
                 }
