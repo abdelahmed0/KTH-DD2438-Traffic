@@ -17,7 +17,7 @@ namespace avoidance
         public CollisionDetector Detector = null;
     
 
-        abstract public Vector2 CalculateNewVelocity(Agent agent, List<Agent> agents, out bool isColliding);
+        abstract public Vector2 CalculateNewVelocity(Agent agent, List<Agent> agents, out bool velChanged);
         abstract public void DrawDebug(Agent agent, List<Agent> agents);
 
 
@@ -32,7 +32,7 @@ namespace avoidance
                 float dist_BA = Vector2.Distance(agentA.Position, agentB.Position);
                 float rad = agentA.Radius + agentB.Radius;
 
-                Vector2 vo_apex = agentA.Velocity * (1f - rvoAlpha) + agentB.Velocity * rvoAlpha - direction_BA * dist_BA; 
+                Vector2 vo_apex = agentB.Velocity * rvoAlpha + agentA.Velocity * (1f - rvoAlpha) - direction_BA * dist_BA; 
 
                 Vector2 perpendicular_BA = Vector2.Perpendicular(direction_BA);
                 Vector2 bound_left = direction_BA * dist_BA + perpendicular_BA * rad;
