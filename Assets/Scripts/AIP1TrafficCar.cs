@@ -76,7 +76,7 @@ public class AIP1TrafficCar : MonoBehaviour
             Debug.Log($"Detector init: {sw.ElapsedMilliseconds} ms");
 
             // Init collision avoidance
-            CollisionAvoidanceAlgorithm collisionAlgorithm = new HRVOCarAlgorithm()
+            CollisionAvoidanceAlgorithm collisionAlgorithm = new HRVOAlgorithm()
             {
                 maxSpeed = maxSpeed, 
                 maxAngle = m_Car.m_MaximumSteerAngle,
@@ -126,9 +126,8 @@ public class AIP1TrafficCar : MonoBehaviour
 
     private void FixedUpdate()
     {
-        // TODO: Apply and try static obstacle fix to drone
+        // TODO: Fix angle check in workspace model
         // TODO: Think about desired velocity fore the collision avoidance
-        // TODO: Use drone HRVO or copy and change to fit for car
         // TODO: Speed bounds in HRVO??
         // TODO: Better controller
         // TODO: Fix car avoidance velocity; is way too high for some reason

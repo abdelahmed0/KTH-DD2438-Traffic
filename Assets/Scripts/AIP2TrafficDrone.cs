@@ -75,14 +75,14 @@ public class AIP2TrafficDrone : MonoBehaviour
             Debug.Log($"Detector init: {sw.ElapsedMilliseconds} ms");
 
             // Init collision avoidance
-            CollisionAvoidanceAlgorithm collisionAlgorithm = new HRVODroneAlgorithm()
+            CollisionAvoidanceAlgorithm collisionAlgorithm = new HRVOAlgorithm()
             {
                 maxSpeed = m_Drone.max_speed,
-                maxAngle = 60f,
+                maxAngle = 40f,
                 allowReversing = allowReversing,
                 maxAccelaration = m_Drone.max_acceleration,
                 Detector = m_Detector,
-                TimeLookAhead = 2f
+                TimeLookAhead = 4f
             };
 
             voManager = new CollisionManager();

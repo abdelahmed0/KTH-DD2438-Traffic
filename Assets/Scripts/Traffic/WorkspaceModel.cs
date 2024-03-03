@@ -46,55 +46,12 @@ namespace avoidance
 
         public bool ContainsVelocity(Vector2 velocity)
         {
-            Vector2 velocityInVoSpace = velocity - apex;
-            // Calculate signed angles from apex to bounds and velocity vector
-            float angleToLeftBound = Vector2.SignedAngle(Vector2.right, boundLeft - apex);
-            float angleToRightBound = Vector2.SignedAngle(Vector2.right, boundRight - apex);
-            float angleToVelocity = Vector2.SignedAngle(Vector2.right, velocityInVoSpace);
+            Vector2 dirVelVOSpace = (velocity - apex).normalized;
 
-            // Normalize angles to range [0, 360)
-            angleToLeftBound = NormalizeAngle(angleToLeftBound);
-            angleToRightBound = NormalizeAngle(angleToRightBound);
-            angleToVelocity = NormalizeAngle(angleToVelocity);
+            Vector2 dirToLeft = boundLeft.normalized - dirVelVOSpace; 
+            Vector2 dirToRight = boundRight.normalized - dirVelVOSpace; 
 
-            // Check if angleToVelocity is between angleToLeftBound and angleToRightBound
-            if (angleToLeftBound < angleToRightBound)
-            {
-                return angleToVelocity >= angleToLeftBound && angleToVelocity <= angleToRightBound;
-            }
-            else
-            {
-                // If bounds cross the 0-degree line, we need to handle wrap-around
-                return angleToVelocity >= angleToLeftBound || angleToVelocity <= angleToRightBound;
-            }
-        }
-
-        private bool InBetween(float thetaRight, float thetaDif, float thetaLeft)
-        {
-            thetaRight = NormalizeAngle(thetaRight);
-            thetaDif = NormalizeAngle(thetaDif);
-            thetaLeft = NormalizeAngle(thetaLeft);
-
-            if (Mathf.Abs(thetaRight - thetaLeft) <= 180)
-            {
-                return thetaRight <= thetaDif && thetaDif <= thetaLeft;
-            }
-            else
-            {
-                if (thetaLeft < thetaRight)
-                {
-                    thetaLeft += 360;
-                    if (thetaDif < thetaRight) thetaDif += 360;
-                }
-                return thetaRight <= thetaDif && thetaDif <= thetaLeft;
-            }
-        }
-
-        private float NormalizeAngle(float angle)
-        {
-            while (angle < 0) angle += 360;
-            while (angle > 360) angle -= 360;
-            return angle;
+            return Vector2.Dot(dirToLeft, dirToRight) < 0f;
         }
     }
 
@@ -104,6 +61,7 @@ namespace avoidance
         public Vector2 Velocity;
         public Vector2 DesiredVelocity;
         public float Radius;
+        public float aggresiveness = 1f; // Aggressiveness factor, lower is more aggressive since collisions are penalized less
 
         public Agent(Vector2 position, Vector2 velocity, Vector2 desiredVelocity, float radius)
         {
