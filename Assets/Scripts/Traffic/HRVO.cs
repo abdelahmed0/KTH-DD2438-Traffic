@@ -13,7 +13,7 @@ namespace avoidance
 
             velColliding = false;
 
-            float speedSamples = 3f; // per orientation
+            const float speedSamples = 5f;
             const float angleSamples = 3f;
             float w = agent.aggresiveness; // Aggressiveness factor, lower is more aggressive since collisions are penalized less
 
@@ -23,7 +23,7 @@ namespace avoidance
             float upperSpeedBound = Mathf.Clamp(agent.Velocity.magnitude + maxAccelaration * TimeLookAhead, allowReversing ? -maxSpeed : 0f, maxSpeed);
 
             float speedStep = Mathf.Max(1f, (upperSpeedBound - lowerSpeedBound) / speedSamples);
-            float angleStep = Mathf.Max(1f, maxAngle / angleSamples);
+            float angleStep = Mathf.Max(1f, 2f * maxAngle / angleSamples);
             
             // Sample in VO space around wanted velocity
             for (float alpha = -maxAngle; alpha <= maxAngle; alpha += angleStep)
@@ -43,7 +43,8 @@ namespace avoidance
                     Vector2 sampleVelocity = Quaternion.Euler(0f, 0f, alpha) * direction * speed;
 
                     float penalty = Vector2.Distance(sampleVelocity, agent.DesiredVelocity);
-                    // penalty += Vector2.Angle(sampleVelocity, agent.DesiredVelocity) / 180f; // Use angle for more stable paths
+                    penalty += Vector2.Angle(sampleVelocity, agent.DesiredVelocity) / 90; // Use angle for more stable paths
+
                     float minTimeToCollision = float.MaxValue;
 
                     // Check static obstacles
@@ -69,6 +70,7 @@ namespace avoidance
                     }
                     
                     bool sampleColliding;
+
                     if (minTimeToCollision < TimeLookAhead)
                     {
                         penalty += w / minTimeToCollision; // Apply penalty based on time to collision
@@ -77,7 +79,7 @@ namespace avoidance
                     else
                     {
                         // Practically guarantees sampling free velocities if a non colliding sample exists
-                        penalty -= 1000f; 
+                        penalty -= 100000f;
                         sampleColliding = false;
                     }
 
@@ -132,13 +134,17 @@ namespace avoidance
         // Draw agent velocity obstacles in velocity space
         public override void DrawDebug(Agent agent, List<Agent> agents)
         {
-            Gizmos.color = Color.green;
-            Gizmos.DrawSphere(Vec2To3(agent.Position + agent.Velocity), 1f);
+            // Gizmos.color = Color.green;
+            // Gizmos.DrawSphere(Vec2To3(agent.Position + agent.Velocity), 1f);
 
-            Gizmos.color = Color.magenta;
-            Gizmos.DrawSphere(Vec2To3(agent.Position + agent.DesiredVelocity), 1f);
+            // Gizmos.color = Color.magenta;
+            // Gizmos.DrawSphere(Vec2To3(agent.Position + agent.DesiredVelocity), 1f);
 
-            if (agent == agents[1])// || agent == agents[^1])
+            // var avoidanceVelocity = CalculateNewVelocity(agent, agents, out bool velColliding);
+            // Gizmos.color = velColliding ? Color.red : Color.yellow;
+            // Gizmos.DrawSphere(Vec2To3(agent.Position + avoidanceVelocity), 1f);
+
+            if (agent == agents[3])// || agent == agents[^3])
             {                
                 var rvos = CalculateVelocityObstacles(agent, agents);
                 foreach (var rvo in rvos)

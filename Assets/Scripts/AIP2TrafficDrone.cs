@@ -33,10 +33,6 @@ public class AIP2TrafficDrone : MonoBehaviour
     public bool drawDebug = true;
 
     private Agent agent;
-
-    private float StuckTime = 1f; // Seconds after which to engage the backing up mechanism when stuck
-    private float RecoveryTime = 1f; // How many seconds to engage the backing up mechanism
-    private bool recoveryOn = false;
     private Vector3 localGoal;
 
     private static CollisionManager collisionManager = null;
@@ -71,18 +67,18 @@ public class AIP2TrafficDrone : MonoBehaviour
             Debug.Log($"Grid rescaling: {sw.ElapsedMilliseconds} ms");
 
             sw.Restart();
-            m_Detector = new CollisionDetector(m_ObstacleMap, margin: 1f);
+            m_Detector = new CollisionDetector(m_ObstacleMap, margin: m_Collider.radius / 2f + 0.0001f);
             Debug.Log($"Detector init: {sw.ElapsedMilliseconds} ms");
 
             // Init collision avoidance
             CollisionAvoidanceAlgorithm collisionAlgorithm = new HRVOAlgorithm()
             {
                 maxSpeed = m_Drone.max_speed,
-                maxAngle = 60f,
+                maxAngle = 30f,
                 allowReversing = allowReversing,
                 maxAccelaration = m_Drone.max_acceleration,
                 Detector = m_Detector,
-                TimeLookAhead = 3f
+                TimeLookAhead = 1.5f
             };
 
             collisionManager = new CollisionManager();
@@ -128,72 +124,27 @@ public class AIP2TrafficDrone : MonoBehaviour
         if (nodePath.Count == 0)
             return;
 
-        if (StuckTime <= 0f)
-        {
-            StuckTime = 2f;
-            currentNodeIdx = LastVisibleNode();
-            recoveryOn = true;
-        }
-        else if(my_rigidbody.velocity.magnitude < 1f)
-            StuckTime -= Time.fixedDeltaTime;
-        else
-            StuckTime = 2f;
-        
-        if (recoveryOn)
-        {
-            if (RecoveryTime <= 0f)
-            {
-                RecoveryTime = 3f;
-                recoveryOn = false;
-            }
-            RecoveryTime -= Time.fixedDeltaTime;
-        }
+        CalculateTargets(lookaheadDistance:100f,
+            out Vector3 targetPosition, out Vector3 targetVelocity);
 
-        // CalculateTargets(lookaheadDistance:20f,
-        //     out Vector3 targetPosition, out Vector3 targetVelocity);
-        PurePursuitTarget(lookaheadDistance:20f, out Vector3 targetPosition, out Vector3 targetVelocity);
-
-        float avoidanceRadius = m_Collider.radius * colliderResizeFactor;
+        float avoidanceRadius = m_Collider.radius * 3f;
         agent.Update(new Agent(Vec3To2(transform.position), Vec3To2(my_rigidbody.velocity), Vec3To2(targetVelocity), avoidanceRadius));
 
         Vector2 newVelocity = collisionManager.CalculateNewVelocity(agent, out bool velColliding);
 
         // Avoid other agents if collision is detected via VO
-        Vector3 avoidanceVelocity = velColliding ? targetVelocity                         : Vec2To3(newVelocity);
-        Vector3 avoidancePosition = velColliding ? transform.position + avoidanceVelocity : targetPosition;
+        Vector3 avoidanceVelocity = Vec2To3(newVelocity);
+        Vector3 avoidancePosition = transform.position + avoidanceVelocity;
 
-        PdControll(avoidancePosition, avoidanceVelocity, recoveryOn);
+        PdControll(avoidancePosition, avoidanceVelocity);
 
-        Debug.DrawLine(transform.position, avoidancePosition, Color.magenta);
+        Debug.DrawLine(transform.position, targetPosition, Color.magenta);
         // Debug.DrawLine(transform.position, transform.position + my_rigidbody.velocity, Color.black);
     }
 
-    private void PdControll(Vector3 targetPosition, Vector3 targetVelocity, bool recoveryOn)
+    private void PdControll(Vector3 targetPosition, Vector3 targetVelocity)
     {
         Vector3 current_position = transform.position;
-
-        float distance = Vector3.Distance(targetPosition, current_position);
-        if (distance < 2f)
-        {
-            currentNodeIdx = Mathf.Min(currentNodeIdx + 1, nodePath.Count - 1);
-            return;
-        }
-
-        if (!recoveryOn)
-        {
-            for (int i = currentNodeIdx + 1; i < nodePath.Count; ++i)
-            {
-                float current_tracked_distance = Vector3.Distance(targetPosition, current_position);
-                float potential_tracked_distance = Vector3.Distance(nodePath[i].GetGlobalPosition(), current_position);
-                
-                if (current_tracked_distance > potential_tracked_distance)
-                {
-                    // found a closer point
-                    currentNodeIdx = i;
-                    return;
-                }
-            }
-        }
         
         // Move via PD controller
         Vector3 pos_error = targetPosition - current_position;
@@ -206,80 +157,46 @@ public class AIP2TrafficDrone : MonoBehaviour
         m_Drone.Move(steering, acceleration);
     }
 
-    private bool PurePursuitTarget(float lookaheadDistance, out Vector3 targetPosition, out Vector3 targetVelocity)
+    private void CalculateTargets(float lookaheadDistance, out Vector3 targetPosition, out Vector3 targetVelocity)
     {
+        // Pure pursuit target
         for (int i = currentNodeIdx; i < nodePath.Count; ++i)
         {
-            Vector3 pathNodePosition = nodePath[i].GetGlobalPosition();
-            if (Vector3.Distance(transform.position, pathNodePosition) > lookaheadDistance)
+            Vector3 lookaheadPosition = nodePath[i].GetGlobalPosition();
+            Vector3 lookaheadPosition2d = Vec3To2(lookaheadPosition);
+            Vector3 position2d = Vec3To2(transform.position);
+
+            if (Vector3.Distance(transform.position, lookaheadPosition) > lookaheadDistance)
             {
-                // Only use lookahead if it is not occluded
-                if(!m_Detector.LineCollision(agent.Position, Vec3To2(pathNodePosition)))
+                currentNodeIdx = i;
+                if (m_Detector.LineCollision(position2d, lookaheadPosition2d))
                 {
-                    currentNodeIdx = i;
-
-                    Vector2 currentDirection = new(my_rigidbody.velocity.normalized.x, my_rigidbody.velocity.normalized.z);
-                    Vector2 directionToLookhead = (Vec3To2(pathNodePosition) - agent.Position).normalized;
-
-                    float lookaheadAngle = Vector2.Angle(directionToLookhead, currentDirection);
-                    float targetSpeed = Mathf.Lerp(0.01f, m_Drone.max_speed, 1f - Mathf.Clamp01(lookaheadAngle / 180f));
-                    targetVelocity = (Vec3To2(pathNodePosition) - Vec3To2(pathNodePosition)).normalized * targetSpeed;
-
-                    targetPosition = nodePath[currentNodeIdx].GetGlobalPosition();
-                    return true;
+                    // Only use lookahead if it is not occluded
+                    // otherwise engage recovery mechanism
+                    currentNodeIdx = LastVisibleNode();
+                    break;
                 }
+
+                Vector2 currentDirection = new(my_rigidbody.velocity.normalized.x, my_rigidbody.velocity.normalized.z);
+                Vector2 directionToLookhead = (lookaheadPosition2d - position2d).normalized;
+
+                float lookaheadAngle = Vector2.Angle(directionToLookhead, currentDirection);
+                float pursuitTargetSpeed = Mathf.Lerp(0.01f, m_Drone.max_speed, 1f - Mathf.Clamp01(lookaheadAngle / 180f));
+                targetVelocity = (lookaheadPosition - transform.position).normalized * pursuitTargetSpeed;
+                targetPosition = lookaheadPosition;
+                return;
             }
         }
-        targetPosition = nodePath[currentNodeIdx].GetGlobalPosition();
-        targetVelocity = targetPosition - transform.position;
-            
-        return false;
+        // If within lookaheadDistance of goal node, just look for the last visible node
+        currentNodeIdx = nodePath.Count - 1;
+        currentNodeIdx = LastVisibleNode();
+
+        AStarNode target = nodePath[currentNodeIdx];
+        targetPosition = m_MapManager.grid.LocalToWorld(target.LocalPosition);
+
+        float targetSpeed = Mathf.Lerp(0.01f, m_Drone.max_speed, ((targetPosition - transform.position) / m_Drone.max_speed).magnitude);
+        targetVelocity = (targetPosition - transform.position).normalized * targetSpeed;
     }
-
-    // private void CalculateTargets(float lookaheadDistance, out Vector3 targetPosition, out Vector3 targetVelocity)
-    // {
-    //     AStarNode target = nodePath[currentNodeIdx];
-    //     targetPosition = m_MapManager.grid.LocalToWorld(target.LocalPosition);
-
-    //     Vector3 lookaheadPosition = PurePursuitTargetPosition(lookaheadDistance);
-    //     Vector2 lookaheadPosition2d = new(lookaheadPosition.x, lookaheadPosition.z);
-
-    //     Vector2 position2d = new(transform.position.x, transform.position.z);
-
-    //     // Only use lookahead if it is not occluded
-    //     if(!m_Detector.LineCollision(position2d, lookaheadPosition2d))
-    //     {
-    //         Vector2 currentDirection = new(my_rigidbody.velocity.normalized.x, my_rigidbody.velocity.normalized.z);
-    //         Vector2 directionToLookhead = (lookaheadPosition2d - position2d).normalized;
-
-    //         float lookaheadAngle = Vector2.Angle(directionToLookhead, currentDirection);
-    //         float targetSpeed = Mathf.Lerp(0.01f, m_Drone.max_speed, 1f - Mathf.Clamp01(lookaheadAngle / 180f));
-    //         targetVelocity = (lookaheadPosition - targetPosition).normalized * targetSpeed;
-    //     }
-    //     else 
-    //     {
-    //         AStarNode nextTarget = nodePath[Math.Min(currentNodeIdx + 1, nodePath.Count-1)];
-    //         Vector3 nextTargetPosition = m_MapManager.grid.LocalToWorld(nextTarget.LocalPosition);
-
-    //         float targetSpeed = Mathf.Lerp(0.01f, m_Drone.max_speed, ((nextTargetPosition - targetPosition) / m_Drone.max_speed).magnitude);
-    //         targetVelocity = (nextTargetPosition - targetPosition).normalized * targetSpeed;
-    //     }
-    // }
-
-    // private Vector3 PurePursuitTargetPosition(float lookaheadDistance)
-    // {
-    //     for (int i = currentNodeIdx; i < nodePath.Count; ++i)
-    //     {
-    //         Vector3 pathNodePosition = nodePath[i].GetGlobalPosition();
-    //         if (Vector3.Distance(transform.position, pathNodePosition) > lookaheadDistance)
-    //         {
-    //             // Debug.DrawLine(transform.position, pathNodePosition, Color.white);
-    //             currentNodeIdx = i;
-    //             return pathNodePosition;
-    //         }
-    //     }
-    //     return nodePath[^1].GetGlobalPosition(); // Return last node if none found within lookahead distance
-    // }
 
     private int LastVisibleNode()
     {
