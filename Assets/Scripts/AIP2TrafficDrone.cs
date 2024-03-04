@@ -194,7 +194,7 @@ public class AIP2TrafficDrone : MonoBehaviour
         AStarNode target = nodePath[currentNodeIdx];
         targetPosition = m_MapManager.grid.LocalToWorld(target.LocalPosition);
 
-        float targetSpeed = Mathf.Lerp(0.01f, m_Drone.max_speed, ((targetPosition - transform.position) / m_Drone.max_speed).magnitude);
+        float targetSpeed = Mathf.Lerp(0.01f, m_Drone.max_speed, ((Vec3To2(targetPosition) - Vec3To2(transform.position)) / m_Drone.max_speed).magnitude);
         targetVelocity = (targetPosition - transform.position).normalized * targetSpeed;
     }
 

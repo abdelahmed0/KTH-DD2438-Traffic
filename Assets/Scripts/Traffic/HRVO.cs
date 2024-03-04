@@ -149,19 +149,22 @@ namespace avoidance
                 var rvos = CalculateVelocityObstacles(agent, agents);
                 foreach (var rvo in rvos)
                 {
-            //         // // Draw RVO
-            //         // Gizmos.color = new Color(189f, 195f, 199f, 0.7f); // grey
+                    // Draw RVO
+                    Gizmos.color = new Color(189f, 195f, 199f, 0.7f); // grey
 
-            //         // if (rvo.ContainsVelocity(rvo.agentB.Velocity) 
-            //         //     && rvo.CollisionTimeFromVelocity(rvo.agentB.Velocity) < TimeLookAhead)
-            //         // {
-            //         //     Vector2 boundLeftWorld = rvo.boundLeft * TimeLookAhead + rvo.apex;
-            //         //     Vector2 boundRightWorld = rvo.boundRight * TimeLookAhead + rvo.apex;
+                    if (rvo.ContainsVelocity(rvo.agentB.Velocity) 
+                        && rvo.CollisionTimeFromVelocity(rvo.agentB.Velocity) < TimeLookAhead)
+                    {
+                        Vector2 boundLeftWorld = rvo.boundLeft * TimeLookAhead + rvo.apex;
+                        Vector2 boundRightWorld = rvo.boundRight * TimeLookAhead + rvo.apex;
                         
-            //         //     DrawTriangle(agent.Position + rvo.apex, // Offset to be closer over agent
-            //         //                 agent.Position + boundLeftWorld,
-            //         //                 agent.Position + boundRightWorld);
-            //         // }
+                        DrawTriangle(agent.Position + rvo.apex, // Offset to be closer over agent
+                                    agent.Position + boundLeftWorld,
+                                    agent.Position + boundRightWorld);
+                        
+                        // Draw line to agent causing this VO
+                        Debug.DrawLine(Vec2To3(rvo.agentB.Position), Vec2To3(agent.Position + rvo.apex), new Color(189f, 195f, 199f, 0.7f));
+                    }
 
                     // Draw HRVO
                     bool isRight = rvo.VelocityRightOfCenterLine(agent.Velocity);
@@ -187,6 +190,9 @@ namespace avoidance
                         DrawTriangle(agent.Position + hrvo.apex, // Offset to be closer over agent
                                     agent.Position + boundLeftWorld,
                                     agent.Position + boundRightWorld);
+                        
+                        // Draw line to agent causing this VO
+                        Debug.DrawLine(Vec2To3(hrvo.agentB.Position), Vec2To3(agent.Position + hrvo.apex), new Color(0f, 1f, 1f, 0.7f));
                     }
 
                 }
