@@ -21,8 +21,8 @@ public class AIP3FormationCar : MonoBehaviour
         
         
         // For finding individual gates
-        var gateGroup = m_MapManager.GetTargetObjects();
-        gateGroup = GameObject.FindGameObjectsWithTag("Target").ToList();
+        var gateGroup = m_MapManager.GetTargetObjects(); // Gives all gate groups on map, fixed order
+        var gateGroupTag = GameObject.FindGameObjectsWithTag("Target").ToList(); // Gives all gate groups on map, but order is random.
         var individualGates = GameObject.FindGameObjectsWithTag("SubTarget").ToList(); // Gives all individual gates on map... but this might not be so useful
 
         foreach (var group in gateGroup)
