@@ -175,7 +175,7 @@ namespace PathPlanning
         }
 
         // Taken from https://stackoverflow.com/questions/99353/how-to-test-if-a-line-segment-intersects-an-axis-aligned-rectange-in-2d
-        bool LineRectCollision(Vector2 a, Vector2 b, Rect rect)
+        public bool LineRectCollision(Vector2 a, Vector2 b, Rect rect)
         {
             if (a.x > rect.xMax && b.x > rect.xMax) return false;
             if (a.x < rect.xMin && b.x < rect.xMin) return false;

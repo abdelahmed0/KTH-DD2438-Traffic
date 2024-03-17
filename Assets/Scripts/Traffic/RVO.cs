@@ -49,7 +49,7 @@ namespace avoidance
                     Vector2 sampleVelocity = Quaternion.Euler(0f, 0f, alpha) * direction * speed;
 
                     float penalty = Vector2.Distance(sampleVelocity, agent.DesiredVelocity);
-                    penalty += Vector2.Angle(sampleVelocity, agent.DesiredVelocity) / 90; // Use angle for more stable paths
+                    // penalty += Vector2.Angle(sampleVelocity, agent.DesiredVelocity) / 90; // Use angle for more stable paths
 
                     float minTimeToCollision = float.MaxValue;
 
@@ -57,7 +57,7 @@ namespace avoidance
                     if (Detector.LineCollision(agent.Position, agent.Position + sampleVelocity * st_TimeLookaHead))
                     {
                         // Debug.DrawLine(Vec2To3(agent.Position), Vec2To3(agent.Position + sampleVelocity * st_TimeLookaHead), Color.white);
-                        continue;
+                        penalty += 100000f;
                     }
 
                     // Check velocity obstacles
@@ -79,7 +79,6 @@ namespace avoidance
                     }
                     else
                     {
-                        // Practically guarantees sampling free velocities if a non colliding sample exists
                         penalty -= 100000f;
                         sampleColliding = false;
                     }

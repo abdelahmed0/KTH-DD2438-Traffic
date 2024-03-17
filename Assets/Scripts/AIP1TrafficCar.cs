@@ -16,7 +16,7 @@ public class AIP1TrafficCar : MonoBehaviour
     public float colliderResizeFactor = 2f;
     public int numberSteeringAngles = 3;
     public bool allowReversing = true;   
-    public bool smoothPath = false;
+    public bool usePurepursuit = true;
     public float k_p = 2f;
     public float k_d = 1f;
           
@@ -38,6 +38,7 @@ public class AIP1TrafficCar : MonoBehaviour
     private static CollisionManager collisionManager;
     private static CollisionDetector m_Detector = null;
     private static bool StaticInitDone = false;
+    private float stuckTime = 0f;
 
     private void Start()
     {
@@ -68,7 +69,7 @@ public class AIP1TrafficCar : MonoBehaviour
             Debug.Log($"Grid rescaling: {sw.ElapsedMilliseconds} ms");
 
             sw.Restart();
-            m_Detector = new CollisionDetector(m_ObstacleMap, margin: m_Collider.transform.localScale.x / 2f - 0.01f);
+            m_Detector = new CollisionDetector(m_ObstacleMap, margin: colliderResizeFactor * m_Collider.transform.localScale.x / 2f + 0.1f);
             Debug.Log($"Detector init: {sw.ElapsedMilliseconds} ms");
 
             // Init collision avoidance
@@ -105,7 +106,7 @@ public class AIP1TrafficCar : MonoBehaviour
             transform.eulerAngles.y,
             numberSteeringAngles);
 
-        nodePath = smoothPath ? pathFinder.SmoothPath(nodePath) : nodePath;
+        nodePath = pathFinder.SmoothPath(nodePath);
 
         Vector3 old_wp = localStart;
         foreach (var wp in nodePath)
@@ -129,10 +130,12 @@ public class AIP1TrafficCar : MonoBehaviour
 
         if (nodePath.Count == 0)
             return;
+        if (my_rigidbody.velocity.magnitude < 1f)
+            stuckTime += Time.fixedDeltaTime;
 
         Vector3 targetVelocity = CalculateTargetVelocity();
 
-        float avoidanceRadius = 2f; // FIXME: localscale should give car length, but is somehow way too large
+        float avoidanceRadius = 1f; // FIXME: localscale should give car length, but is somehow way too large
         agent.Update(new Agent(Vec3To2(transform.position), Vec3To2(my_rigidbody.velocity), Vec3To2(targetVelocity), avoidanceRadius));
 
         Vector2 newVelocity = collisionManager.CalculateNewVelocity(agent, out bool isColliding);
@@ -152,7 +155,7 @@ public class AIP1TrafficCar : MonoBehaviour
     {
         Vector3 current_position = transform.position;
 
-        if (Vector3.Distance(targetPosition, current_position) < 100f)
+        if (Vector3.Distance(targetPosition, current_position) < 20f)
         {
             currentNodeIdx = Mathf.Min(currentNodeIdx + 1, nodePath.Count - 1);
         }
@@ -170,20 +173,27 @@ public class AIP1TrafficCar : MonoBehaviour
 
     private Vector3 CalculateTargetVelocity()
     {
+        int targetIdx;
         // Pure pursuit target
-        int targetIdx = NextVisibleNode();
-        if (targetIdx == -1)
+        if (usePurepursuit)
         {
-            // Engage recovery mechanism when occluded
-            targetIdx = LastVisibleNode();
-            currentNodeIdx = targetIdx;
+            targetIdx = NextVisibleNode();
 
-            Vector3 recoveryPosition = nodePath[targetIdx].GetGlobalPosition();
+            if (targetIdx == -1)
+            {
+                // Engage recovery mechanism when occluded
+                targetIdx = LastVisibleNode();
+                currentNodeIdx = targetIdx;
 
-            float targetSpeed = Mathf.Lerp(0.01f, maxSpeed, ((Vec3To2(recoveryPosition) - Vec3To2(transform.position)) / maxSpeed).magnitude);
-            return (recoveryPosition - transform.position).normalized * targetSpeed;
+                Vector3 recoveryPosition = nodePath[targetIdx].GetGlobalPosition();
+
+                float targetSpeed = Mathf.Lerp(0.01f, maxSpeed, ((Vec3To2(recoveryPosition) - Vec3To2(transform.position)) / maxSpeed).magnitude);
+                return (recoveryPosition - transform.position).normalized * targetSpeed;
+            }
+        } else {
+            targetIdx = currentNodeIdx;
         }
-
+        currentNodeIdx = targetIdx;
         // Use lookahead
         Vector3 targetPosition = nodePath[targetIdx].GetGlobalPosition();
         Vector2 targetPosition2d = Vec3To2(targetPosition);
@@ -201,7 +211,7 @@ public class AIP1TrafficCar : MonoBehaviour
 
     private int NextVisibleNode()
     {
-        float acceptableAngleDiff = 20;
+        float disregardedAngleDiff = 10f;
 
         for (int i = currentNodeIdx; i < nodePath.Count; ++i)
         {
@@ -209,20 +219,11 @@ public class AIP1TrafficCar : MonoBehaviour
             Vector2 pathNodePosition = Vec3To2(nodePath[i].GetGlobalPosition());
             Vector2 direction = (pathNodePosition - currentPosition).normalized;
 
-            Vector2 bottomLeft = Vec3To2(m_Collider.bounds.min) + new Vector2(0.1f, 0.1f);
-            Vector2 topRight = Vec3To2(m_Collider.bounds.max) - new Vector2(0.1f, 0.1f);
-
-            Vector2 topLeft = new Vector2(bottomLeft.x, topRight.y);
-            Vector2 bottomRight = new Vector2(topRight.x, bottomLeft.y);
-
-            // Disregard sideways nodes since car cannot drive to those
-            if (!m_Detector.LineCollision(currentPosition, pathNodePosition) 
-            // if (!m_Detector.LineCollision(bottomLeft, pathNodePosition) 
-            //     && !m_Detector.LineCollision(topRight, pathNodePosition) 
-            //     && !m_Detector.LineCollision(topLeft, pathNodePosition)
-            //     && !m_Detector.LineCollision(bottomRight, pathNodePosition)
-                && (Vector2.Angle(transform.forward, direction) > 90 + acceptableAngleDiff 
-                    || Vector2.Angle(transform.forward, direction) < 90 - acceptableAngleDiff))
+            // Only consider forward facing nodes in a given angle range
+            if (!m_Detector.LineCollision(currentPosition, pathNodePosition))
+                // && Vector2.Angle(Vec3To2(transform.forward), direction) < acceptableAngleDiff)
+                // && (Vector2.Angle(Vec3To2(transform.forward), direction) > 90f + disregardedAngleDiff 
+                //     || Vector2.Angle(Vec3To2(transform.forward), direction) < 90f - disregardedAngleDiff))
             {
                 return i;
             }
@@ -232,7 +233,7 @@ public class AIP1TrafficCar : MonoBehaviour
 
     private int LastVisibleNode()
     {
-        float acceptableAngleDiff = 5f;
+        float disregardedAngleDiff = 20;
 
         for (int i = currentNodeIdx; i >= 0; --i)
         {
@@ -240,20 +241,10 @@ public class AIP1TrafficCar : MonoBehaviour
             Vector2 pathNodePosition = Vec3To2(nodePath[i].GetGlobalPosition());
             Vector2 direction = (pathNodePosition - currentPosition).normalized;
 
-            Vector2 bottomLeft = Vec3To2(m_Collider.bounds.min) + new Vector2(1.1f, 1.1f);
-            Vector2 topRight = Vec3To2(m_Collider.bounds.max) - new Vector2(1.1f, 1.1f);
-
-            Vector2 topLeft = new Vector2(bottomLeft.x, topRight.y);
-            Vector2 bottomRight = new Vector2(topRight.x, bottomLeft.y);
-
             // Disregard sideways nodes since car cannot drive to those
-            if (!m_Detector.LineCollision(currentPosition, pathNodePosition) 
-            // if (!m_Detector.LineCollision(bottomLeft, pathNodePosition) 
-            //     && !m_Detector.LineCollision(topRight, pathNodePosition) 
-            //     && !m_Detector.LineCollision(topLeft, pathNodePosition)
-            //     && !m_Detector.LineCollision(bottomRight, pathNodePosition)
-                && (Vector2.Angle(transform.forward, direction) > 90 + acceptableAngleDiff 
-                    || Vector2.Angle(transform.forward, direction) < 90 - acceptableAngleDiff))
+            if (!m_Detector.LineCollision(currentPosition, pathNodePosition)
+                && (Vector2.Angle(Vec3To2(transform.forward), direction) > 90 + disregardedAngleDiff 
+                    || Vector2.Angle(Vec3To2(transform.forward), direction) < 90 - disregardedAngleDiff))
             {
                 return i;
             }
