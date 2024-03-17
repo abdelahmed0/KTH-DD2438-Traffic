@@ -296,4 +296,4 @@ MonoBehaviour:
   smoothPath: 1
   k_p: 2
   k_d: 1
-  drawDebug: 0
+  drawDebug: 1

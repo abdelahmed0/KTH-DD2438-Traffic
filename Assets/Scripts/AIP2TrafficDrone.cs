@@ -74,11 +74,11 @@ public class AIP2TrafficDrone : MonoBehaviour
             CollisionAvoidanceAlgorithm collisionAlgorithm = new HRVOAlgorithm()
             {
                 maxSpeed = m_Drone.max_speed,
-                maxAngle = 30f,
+                maxAngle = 60f,
                 allowReversing = allowReversing,
                 maxAccelaration = m_Drone.max_acceleration,
                 Detector = m_Detector,
-                TimeLookAhead = 1.5f
+                TimeLookAhead = 1f
             };
 
             collisionManager = new CollisionManager();
@@ -124,8 +124,7 @@ public class AIP2TrafficDrone : MonoBehaviour
         if (nodePath.Count == 0)
             return;
 
-        CalculateTargets(lookaheadDistance:100f,
-            out Vector3 targetPosition, out Vector3 targetVelocity);
+        Vector3 targetVelocity = CalculateTargetVelocity();
 
         float avoidanceRadius = m_Collider.radius * 3f;
         agent.Update(new Agent(Vec3To2(transform.position), Vec3To2(my_rigidbody.velocity), Vec3To2(targetVelocity), avoidanceRadius));
@@ -138,13 +137,19 @@ public class AIP2TrafficDrone : MonoBehaviour
 
         PdControll(avoidancePosition, avoidanceVelocity);
 
-        Debug.DrawLine(transform.position, targetPosition, Color.magenta);
-        // Debug.DrawLine(transform.position, transform.position + my_rigidbody.velocity, Color.black);
+        Debug.DrawLine(transform.position, nodePath[currentNodeIdx].GetGlobalPosition(), Color.magenta);
+        // Debug.DrawLine(transform.position, avoidancePosition, Color.blue);
+        // Debug.DrawLine(transform.position, transform.position + avoidanceVelocity, Color.yellow);
     }
 
     private void PdControll(Vector3 targetPosition, Vector3 targetVelocity)
     {
         Vector3 current_position = transform.position;
+
+        if (Vector3.Distance(targetPosition, current_position) < 100f)
+        {
+            currentNodeIdx = Mathf.Min(currentNodeIdx + 1, nodePath.Count - 1);
+        }
         
         // Move via PD controller
         Vector3 pos_error = targetPosition - current_position;
@@ -157,45 +162,50 @@ public class AIP2TrafficDrone : MonoBehaviour
         m_Drone.Move(steering, acceleration);
     }
 
-    private void CalculateTargets(float lookaheadDistance, out Vector3 targetPosition, out Vector3 targetVelocity)
+    private Vector3 CalculateTargetVelocity()
     {
         // Pure pursuit target
+        int targetIdx = NextVisibleNode();
+        if (targetIdx == -1)
+        {
+            // Engage recovery mechanism when occluded
+            targetIdx = LastVisibleNode();
+            currentNodeIdx = targetIdx;
+
+            Vector3 recoveryPosition = nodePath[targetIdx].GetGlobalPosition();
+
+            float targetSpeed = Mathf.Lerp(0.01f, m_Drone.max_speed, ((Vec3To2(recoveryPosition) - Vec3To2(transform.position)) / m_Drone.max_speed).magnitude);
+            return (recoveryPosition - transform.position).normalized * targetSpeed;
+        }
+
+        // Use lookahead
+        Vector3 targetPosition = nodePath[targetIdx].GetGlobalPosition();
+        Vector2 targetPosition2d = Vec3To2(targetPosition);
+        Vector2 position2d = Vec3To2(transform.position);
+
+        Vector2 currentDirection = new(my_rigidbody.velocity.normalized.x, my_rigidbody.velocity.normalized.z);
+        Vector2 directionToLookhead = (targetPosition2d - position2d).normalized;
+
+        float lookaheadAngle = Vector2.Angle(directionToLookhead, currentDirection);
+        float pursuitTargetSpeed = Mathf.Lerp(0.01f, m_Drone.max_speed, 1f - Mathf.Clamp01(lookaheadAngle / 180f));
+        Vector3 targetVelocity = (targetPosition - transform.position).normalized * pursuitTargetSpeed;
+        
+        return targetVelocity;
+    }
+
+    private int NextVisibleNode()
+    {
         for (int i = currentNodeIdx; i < nodePath.Count; ++i)
         {
-            Vector3 lookaheadPosition = nodePath[i].GetGlobalPosition();
-            Vector3 lookaheadPosition2d = Vec3To2(lookaheadPosition);
-            Vector3 position2d = Vec3To2(transform.position);
+            Vector2 currentPosition = Vec3To2(transform.position);
+            Vector2 pathNodePosition = Vec3To2(nodePath[i].GetGlobalPosition());
 
-            if (Vector3.Distance(transform.position, lookaheadPosition) > lookaheadDistance)
+            if (!m_Detector.LineCollision(currentPosition, pathNodePosition))
             {
-                currentNodeIdx = i;
-                if (m_Detector.LineCollision(position2d, lookaheadPosition2d))
-                {
-                    // Only use lookahead if it is not occluded
-                    // otherwise engage recovery mechanism
-                    currentNodeIdx = LastVisibleNode();
-                    break;
-                }
-
-                Vector2 currentDirection = new(my_rigidbody.velocity.normalized.x, my_rigidbody.velocity.normalized.z);
-                Vector2 directionToLookhead = (lookaheadPosition2d - position2d).normalized;
-
-                float lookaheadAngle = Vector2.Angle(directionToLookhead, currentDirection);
-                float pursuitTargetSpeed = Mathf.Lerp(0.01f, m_Drone.max_speed, 1f - Mathf.Clamp01(lookaheadAngle / 180f));
-                targetVelocity = (lookaheadPosition - transform.position).normalized * pursuitTargetSpeed;
-                targetPosition = lookaheadPosition;
-                return;
+                return i;
             }
         }
-        // If within lookaheadDistance of goal node, just look for the last visible node
-        currentNodeIdx = nodePath.Count - 1;
-        currentNodeIdx = LastVisibleNode();
-
-        AStarNode target = nodePath[currentNodeIdx];
-        targetPosition = m_MapManager.grid.LocalToWorld(target.LocalPosition);
-
-        float targetSpeed = Mathf.Lerp(0.01f, m_Drone.max_speed, ((Vec3To2(targetPosition) - Vec3To2(transform.position)) / m_Drone.max_speed).magnitude);
-        targetVelocity = (targetPosition - transform.position).normalized * targetSpeed;
+        return -1;
     }
 
     private int LastVisibleNode()

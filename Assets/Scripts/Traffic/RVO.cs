@@ -20,7 +20,7 @@ namespace avoidance
             velColliding = false;
 
             const float speedSamples = 5f;
-            const float angleSamples = 3f;
+            const float angleSamples = 5f;
             float w = agent.aggresiveness; // Aggressiveness factor, lower is more aggressive since collisions are penalized less
 
             Vector2 newVelocity = Vector2.positiveInfinity;
