@@ -7,7 +7,7 @@ using UnityEngine;
 
 namespace PathPlanning
 {
-    abstract class PathSegment
+    abstract public class PathSegment
     {
         public PathSegment parent;
         public float maxInSpeed;

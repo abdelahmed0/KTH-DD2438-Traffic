@@ -1,16 +1,11 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+﻿using System.Collections.Generic;
 using UnityEngine;
-using System.Diagnostics;
 using util;
 using Scripts.Map;
 
 namespace PathPlanning
 {
-    class CollisionDetector
+    public class CollisionDetector
     {
         public List<Rect> boundingBoxes;
         private float yMin;
@@ -180,7 +175,7 @@ namespace PathPlanning
         }
 
         // Taken from https://stackoverflow.com/questions/99353/how-to-test-if-a-line-segment-intersects-an-axis-aligned-rectange-in-2d
-        bool LineRectCollision(Vector2 a, Vector2 b, Rect rect)
+        public bool LineRectCollision(Vector2 a, Vector2 b, Rect rect)
         {
             if (a.x > rect.xMax && b.x > rect.xMax) return false;
             if (a.x < rect.xMin && b.x < rect.xMin) return false;

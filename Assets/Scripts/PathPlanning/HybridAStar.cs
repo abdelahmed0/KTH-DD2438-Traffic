@@ -1,11 +1,8 @@
 using UnityEngine;
-using System.Collections;
 using System.Collections.Generic;
 using System;
-using UnityEngine.UIElements;
-using UnityEditorInternal;
-using System.Linq;
 using Scripts.Map;
+using PathPlanning;
 
 namespace aStar
 {
@@ -16,16 +13,16 @@ namespace aStar
 
         // Resolution of 10 corresponds to 360/10=36 possible angles per cell
         public static float AngleResolution = 10f;
-        private const float GoalThreshold = 0.5f;
-        private const int maxSteps = 300000;
+        public readonly float globalStepDistance;
+        public CollisionDetector Detector;
+        private const float GoalThreshold = 0.1f;
+        private const int maxSteps = 100000;
 
         private readonly float colliderResizeFactor;
         private readonly float stepDistance;
-        private readonly float globalStepDistance;
         private readonly Grid grid;
         private readonly ObstacleMap obstacleMap;
-        private readonly BoxCollider collider;
-        private readonly float vehicleLength;
+        private readonly Collider collider;
         private readonly bool fixedOrientation;
         private readonly float maxSteeringAngle;
         private readonly bool allowReversing = false;
@@ -37,27 +34,25 @@ namespace aStar
 
         public Dictionary<Vector2Int, float> flowField = null;
 
-        public HybridAStarGenerator(Grid grid, ObstacleMap obstacleMap, float maxSteeringAngle, BoxCollider collider, float colliderResizeFactor, bool fixedOrientation, bool allowReversing, float backwardsPenalty)
+        public HybridAStarGenerator(Grid grid, ObstacleMap obstacleMap, float maxSteeringAngle, Collider collider, float colliderResizeFactor, bool fixedOrientation, bool allowReversing, float backwardsPenalty)
         {
             this.grid = grid;
             this.obstacleMap = obstacleMap;
             this.collider = collider;
             this.colliderResizeFactor = colliderResizeFactor;
-            vehicleLength = grid.WorldToLocal(collider.transform.localScale).z;
-            Debug.Log("Collider size: " + grid.WorldToLocal(collider.size));
 
             // Incorporate cellSize and cellGap to prevent steps from landing in the same cell they started in
             Vector3 cellSize = grid.cellSize;
-            Debug.Log("Cellsize: " + cellSize);
+            // Debug.Log("Cellsize: " + cellSize);
             Vector3 cellGap = grid.cellGap;
             float cellDiagonal = Mathf.Sqrt(cellSize.x * cellSize.x + cellSize.y * cellSize.y);
             float gapDiagonal = Mathf.Sqrt(cellGap.x * cellGap.x + cellGap.y * cellGap.y);
-            stepDistance = cellDiagonal + gapDiagonal + 0.001f;
+            stepDistance = cellDiagonal + gapDiagonal + 0.00001f;
             Vector3 temp = grid.LocalToWorld(cellSize + cellGap);
             globalStepDistance = Mathf.Sqrt(temp.x * temp.x + temp.y * temp.y);
-            Debug.Log("Step distance: " + stepDistance);
-            Debug.Log("Global step distance: " + globalStepDistance);
-            Debug.Log("Car length" + vehicleLength);
+            // Debug.Log("Step distance: " + stepDistance);
+            // Debug.Log("Global step distance: " + globalStepDistance);
+            // Debug.Log("Car length" + vehicleLength);
 
             this.maxSteeringAngle = maxSteeringAngle;
             this.fixedOrientation = fixedOrientation;
@@ -93,19 +88,31 @@ namespace aStar
             openSet.Enqueue(startNode.GetFScore(), startNode);
 
             int steps = 0;
-            while (openSet.Count > 0 && steps < maxSteps)
+            while (openSet.Count > 0)
             {
                 steps++;
                 var currentNode = openSet.Dequeue().Value;
                 closedSet.Add(currentNode);
 
-                if (GoalReached(currentNode.LocalPosition))
+                if (GoalReached(currentNode.LocalPosition) || steps >= maxSteps) 
                 {
-                    var goalNode = currentNode.Copy();
-                    goalNode.parent = currentNode;
-                    goalNode.LocalPosition = localGoal;
-                    // Reconstruct the path if the goal is reached
-                    var path = goalNode.BackTrackPath();
+                    // Reconstruct the path if the goal is reached or best path so far if maximum step number is reached
+                    AStarNode lastNode;
+
+                    if (steps >= maxSteps) // Best so far
+                    {
+                        Debug.Log($"Goal not found in {steps} steps. Shortcutting to goal.");
+                        lastNode = openSet.Dequeue().Value;
+                    } 
+                    else // Goal reached
+                    {
+                        lastNode = currentNode.Copy();
+                    }
+                    
+                    lastNode.parent = currentNode;
+                    lastNode.LocalPosition = localGoal;
+
+                    var path = lastNode.BackTrackPath();
                     path.Reverse();
                     return path;
                 }
@@ -143,9 +150,7 @@ namespace aStar
                     openSet.Enqueue(nextNode.GetFScore(), nextNode); // Enqueue if node was not updated
                 }
             }
-
-            Debug.LogWarning("No path found in " + steps + " steps");
-            return new List<AStarNode>();
+            return null;
         }
 
         private List<AStarNode> GenerateChildNodes(AStarNode parent)
@@ -213,29 +218,10 @@ namespace aStar
             var cell2d = new Vector2Int(cell.x, cell.y);
             if (!obstacleMap.traversabilityPerCell.ContainsKey(cell2d))
                 return false;
-                                        
-            // Node in blocked cell
-            var nextCell = grid.LocalToCell(next.LocalPosition);
-            if (obstacleMap.traversabilityPerCell[new Vector2Int(nextCell.x, nextCell.y)] == ObstacleMap.Traversability.Blocked)
-                return false;
             
             // Check if path to node is blocked
-            Vector3 direction = (nextGlobal - currentGlobal).normalized;
-            var orientation = fixedOrientation ? Quaternion.Euler(Vector3.forward) : Quaternion.FromToRotation(Vector3.forward, direction);
-
-            bool hit = Physics.BoxCast(currentGlobal - collider.transform.localScale.z * direction,// * colliderResizeFactor,
-                                        colliderResizeFactor * collider.transform.localScale / 2f,
-                                        direction, 
-                                        out var hitInfo,
-                                        orientation,
-                                        globalStepDistance + collider.transform.localScale.z);// * colliderResizeFactor);
-            // if (hit)
-            //     ExtDebug.DrawBoxCastOnHit(currentGlobal - collider.transform.localScale.z * direction,// - collider.transform.localScale.z * direction * colliderResizeFactor,
-            //                             colliderResizeFactor * collider.transform.localScale / 2f,
-            //                             direction, 
-            //                             orientation,
-            //                             hitInfo.distance,
-            //                             Color.blue);
+            bool hit = Detector.LineCollision(new Vector2(currentGlobal.x, currentGlobal.z),
+                                              new Vector2(nextGlobal.x, nextGlobal.z));
             
             return !hit;
     }
@@ -249,7 +235,7 @@ namespace aStar
         {
             Vector3Int cell = grid.LocalToCell(localPosition);
             Vector2Int cell2d = new Vector2Int(cell.x, cell.y);
-            if (!flowField.ContainsKey(cell2d))
+            if (flowField.ContainsKey(cell2d))
                 return flowField[cell2d] < GoalThreshold;
             return Vector2.Distance(new Vector2(localPosition.x, localPosition.z), new Vector2(localGoal.x, localGoal.z)) < GoalThreshold;
         }
@@ -258,7 +244,7 @@ namespace aStar
         {
             Vector3Int cell = grid.WorldToCell(globalPosition);
             Vector2Int cell2d = new Vector2Int(cell.x, cell.y);
-            return flowField[cell2d];
+            return flowField.ContainsKey(cell2d) ? flowField[cell2d] : float.MaxValue;
         }
 
         private void CalculateFlowField()
@@ -368,9 +354,9 @@ namespace aStar
 
     public class AStarNode
     {
+        public AStarNode parent;
         public Vector3 LocalPosition { get; set; }
         public float angle; // in radians
-        public AStarNode parent;
         public float gScore;
         public float hScore;
         public bool isBackwards = false;
@@ -444,7 +430,6 @@ namespace aStar
     {
         // Min-heap Priority Queue
         private readonly List<Node> elements = new();
-
         public int Count => elements.Count;
 
         public void Enqueue(TPriority priority, TValue value)
@@ -540,327 +525,6 @@ namespace aStar
                 Value = value;
             }
         }
-    }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-    public class HybridANode
-    {
-        public Vector3 position;
-        public HybridANode parent;
-        public float theta;
-        public float velocity;
-        public float g;
-        public float h;
-        public float f;
-
-        public HybridANode(Vector3 position, float theta, HybridANode parent, float g, float h)
-        {
-            this.position = position;
-            this.parent = parent;
-            this.theta = theta;
-            this.g = g;
-            this.h = h;
-            this.f = g + h;
-        }
-    }
-
-    public class HybridAStar
-    {
-        public Vector3 start;
-        public Vector3 goal;
-        public Dictionary<Vector2Int, ObstacleMap.Traversability> mapData;
-        public float initialAngle;
-        public List<Vector3> path;
-        public List<float> dx = new List<float> { 0.7068582f, 0.705224f, 0.705224f };
-        public List<float> dz = new List<float> { 0, -0.0415893f, 0.0415893f };
-        public List<float> dt = new List<float> { 0, 0.1178097f, -0.1178097f };
-        public HybridAStar(Vector3 start, Vector3 goal, Dictionary<Vector2Int, ObstacleMap.Traversability> mapData, float initialAngle)
-        {
-            this.start = start;
-            this.goal = goal;
-            this.mapData = mapData;
-            this.initialAngle = initialAngle;
-            this.path = new List<Vector3>();
-        }
-
-        public List<Vector3> PlanPath()
-        {
-            // initialize open and closed list
-            List<HybridANode> openList = new List<HybridANode>();
-            List<HybridANode> closedList = new List<HybridANode>();
-
-            // store all nodes in a dictionary
-            Dictionary<Vector3, HybridANode> nodeDict = new Dictionary<Vector3, HybridANode>();
-            foreach (Vector2Int pos in mapData.Keys)
-            {
-                if (mapData[pos] == ObstacleMap.Traversability.Blocked)
-                {
-                    continue;
-                }
-                Vector3 pos3d = new Vector3();
-
-                pos3d = new Vector3(pos.x, pos.y, 0);
-                HybridANode node = new HybridANode(pos3d, 0, null, 0, Vector3.Distance(pos3d, goal));
-                nodeDict.Add(pos3d, node);
-
-                pos3d = new Vector3(pos.x, pos.y, Mathf.PI);
-                node = new HybridANode(pos3d, Mathf.PI, null, 0, Vector3.Distance(pos3d, goal));
-                nodeDict.Add(pos3d, node);
-                for (int i = 1; i < 18; i++)
-                {
-                    pos3d = new Vector3(pos.x, pos.y, i * Mathf.PI / 18);
-                    node = new HybridANode(pos3d, i * Mathf.PI / 18, null, 0, Vector3.Distance(pos3d, goal));
-                    nodeDict.Add(pos3d, node);
-
-                    pos3d = new Vector3(pos.x, pos.y, -i * Mathf.PI / 18);
-                    node = new HybridANode(pos3d, -i * Mathf.PI / 18, null, 0, Vector3.Distance(pos3d, goal));
-                    nodeDict.Add(pos3d, node);
-                }
-
-
-
-            }
-            HybridANode start_node = nodeDict[LocToGrid(new Vector3((int)this.start.x, (int)this.start.z, this.initialAngle))];
-            openList.Add(start_node);
-
-            while (openList.Count > 0)
-            {
-                // 3. sort open list by f cost primarily and h cost secondarily
-                openList.OrderBy(n => n.f).ThenBy(n => n.h).ToList();
-                HybridANode current_node = openList[0];
-
-                // 4. if current node is goal node, return path
-                if (Vector3.Distance(current_node.position, goal) < 2f)
-                {
-                    this.path.Add(goal);
-                    while (current_node.parent != null)
-                    {
-                        this.path.Add(current_node.position);
-                        current_node = current_node.parent;
-                    }
-                    this.path.Reverse();
-                    break;
-                }
-
-                // 5. remove current node from open list and add to closed list
-                openList.Remove(current_node);
-                closedList.Add(current_node);
-
-                // 6. for each neighbor of current node
-                for (int i = 0; i < 3; i++)
-                {
-                    Vector3 neighbour = GetNextPos(current_node.position, i);
-                    neighbour = LocToGrid(neighbour);
-                    // the position is Blocked
-                    if (!nodeDict.ContainsKey(neighbour))
-                    {
-                        continue;
-                    }
-                    if (closedList.Any(node => node.position == neighbour))
-                    {
-                        continue;
-                    }
-                    HybridANode neighborNode = nodeDict[neighbour];
-                    float new_g = current_node.g + Vector3.Distance(current_node.position, neighborNode.position);
-                    Vector3 current_idx = LocToGrid(new Vector3(current_node.position.x, current_node.position.z, current_node.theta));
-                    if (!openList.Any(node => (node.position == neighborNode.position && node.theta == neighborNode.theta)) || new_g < nodeDict[neighbour].g)
-                    {
-                        neighborNode.h = Vector3.Distance(neighborNode.position, goal);
-                        neighborNode.g = new_g;
-                        neighborNode.f = neighborNode.g + neighborNode.h;
-                        neighborNode.parent = current_node;
-                        if (!openList.Any(node => (node.position == neighborNode.position && node.theta == neighborNode.theta)))
-                        {
-                            openList.Add(neighborNode);
-                        }
-                    }
-
-                }
-            }
-            return this.path;
-        }
-
-        public Vector3 GetNextPos(Vector3 current_pos, int i)
-        {
-            float x = current_pos.x + dx[i] * Mathf.Cos(current_pos.y) - dz[i] * Mathf.Sin(current_pos.y);
-            float y = current_pos.y + dx[i] * Mathf.Sin(current_pos.y) + dz[i] * Mathf.Cos(current_pos.y);
-            float theta = NormalRad(current_pos.z + dt[i]);
-            return new Vector3(x, y, theta);
-        }
-
-        public float NormalRad(float rad)
-        {
-            if (rad > Mathf.PI)
-            {
-                rad = rad - 2 * Mathf.PI;
-            }
-            else if (rad <= -Mathf.PI)
-            {
-                rad = rad + 2 * Mathf.PI;
-            }
-            return rad;
-        }
-
-        public Vector3 LocToGrid(Vector3 sortkey)
-        {
-            Vector3 gridPos = new Vector3((int)sortkey.x, (int)sortkey.y, 0);
-            float rad = sortkey.z;
-            if (rad > 0)
-            {
-                int i = Mathf.RoundToInt(rad / (Mathf.PI / 18));
-                gridPos.z = i * Mathf.PI / 18;
-            }
-            else if (rad < 0)
-            {
-                int i = Mathf.RoundToInt(rad / (Mathf.PI / 18));
-                gridPos.z = -i * Mathf.PI / 18;
-            }
-            else
-            {
-                gridPos.z = 0;
-            }
-            return gridPos;
-        }
-    }
-
-    public class VoronoiDiagram : MonoBehaviour
-    {
-        public Vector2Int dim;
-
-        public List<Vector3> sites;
-
-        public float heightAboveGround = 10f;
-        /*
-        private void Start()
-        {
-            List<Vector3> sitesCopy = new List<Vector3>(sites);
-            Debug.Log(CreateVoronoiDiagram(sitesCopy));
-            Texture2D diagramTexture = CreateVoronoiDiagram(sites);
-            Debug.Log("do we make it here?");
-            GameObject diagramDisplay = new GameObject("VoronoiDiagramDisplay");
-            SpriteRenderer spriteRenderer = diagramDisplay.AddComponent<SpriteRenderer>();
-            spriteRenderer.sprite = Sprite.Create(diagramTexture, new Rect(0, 0, dim.x, dim.y), new Vector2(0.5f, 0.5f));
-
-            diagramDisplay.transform.position = new Vector3(dim.x/2, heightAboveGround, dim.y/2);
-
-        }
-
-        */
-        public Texture2D CreateVoronoiDiagram(List<Vector3> sites)
-        {
-            if (sites == null)
-            {
-                Debug.LogError("Sites list is null.");
-                return null; // Or handle it accordingly
-            }
-            UnityEngine.Color[] regions = new UnityEngine.Color[sites.Count];
-            for (int i = 0; i < sites.Count; i++)
-            {
-                regions[i] = new UnityEngine.Color(UnityEngine.Random.Range(0f, 1f), UnityEngine.Random.Range(0f, 1f), UnityEngine.Random.Range(0f, 1f), 1f);
-            }
-
-            UnityEngine.Color[] colors = new UnityEngine.Color[dim.x * dim.y];
-
-            for (int y = 0; y < dim.y; y++)
-            {
-
-                for (int x = 0; x < dim.x; x++)
-                {
-                    int index = y * dim.x + x; //maybe x * dim.x + y
-                    Vector3 pos = new Vector3(x, heightAboveGround, y);
-
-                    colors[index] = regions[GetClosestSiteIndex(pos, sites)];
-                    //Debug.Log("color index " + colors[index]);
-                }
-
-            }
-            //Debug.Log("We are returning");
-            return GetImageFromColorArray(colors);
-
-        }
-
-        int GetClosestSiteIndex(Vector3 pos, List<Vector3> sites)
-        {
-            float smallestDistance = float.MaxValue;
-            int index = -1; // -1?
-            for (int i = 0; i < sites.Count; i++)
-            {
-                float distance = Vector3.Distance(pos, sites[i]);
-                if (distance < smallestDistance)
-                {
-                    smallestDistance = distance;
-                    index = i;
-                }
-            }
-            return index;
-        }
-        Texture2D GetImageFromColorArray(UnityEngine.Color[] colors)
-        {
-
-            Texture2D tex = new Texture2D(dim.x, dim.y);
-
-            tex.filterMode = FilterMode.Point;
-
-            tex.SetPixels(colors);
-
-            tex.Apply();
-
-            return tex;
-        }
-
-        /*
-        Texture2D TestObstacles(List<Vector3> sites)
-        {
-            UnityEngine.Color[] regions = new UnityEngine.Color[sites.Count];
-            UnityEngine.Color[] colors = new UnityEngine.Color[dim.x * dim.y];
-            for (int i = 0; i < sites.Count; i++)
-            {
-                regions[i] = new UnityEngine.Color(UnityEngine.Random.Range(0f, 1f), UnityEngine.Random.Range(0f, 1f), UnityEngine.Random.Range(0f, 1f), 1f);
-            }
-
-
-
-        }
-    */
-        public static List<Vector3> ScaleSites(List<Vector3> originalSites, int resolutionMultiplier)
-        {
-            List<Vector3> scaledSites = new List<Vector3>();
-
-            foreach (Vector3 site in originalSites)
-            {
-                // Assuming the original sites are in the range [0, 20] for both x and z.
-                Vector3 scaledSite = new Vector3(site.x * resolutionMultiplier, site.y, site.z * resolutionMultiplier);
-                scaledSites.Add(scaledSite);
-            }
-
-            return scaledSites;
-        }
-
     }
 
 }

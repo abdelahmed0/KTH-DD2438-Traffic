@@ -169,7 +169,6 @@ namespace QuadTreePoint
 		#region · Data members ·
 		private QuadTreeNode m_root;
 		private int m_bucket_capacity;
-		private int m_node_count;
 		#endregion
 
 		#region · Constructor ·
@@ -183,7 +182,6 @@ namespace QuadTreePoint
 		{
 			m_root = new QuadTreeNode(in_region);
 			m_bucket_capacity = in_bucket_capacity;
-			m_node_count = 0;
 		}
 
 		/// <summary>

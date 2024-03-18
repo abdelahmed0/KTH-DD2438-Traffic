@@ -1,133 +1,287 @@
-﻿using System.Linq;
-using Imported.StandardAssets.Vehicles.Car.Scripts;
+﻿using Imported.StandardAssets.Vehicles.Car.Scripts;
+using System;
+using System.Linq;
+using System.Collections.Generic;
 using Scripts.Game;
 using Scripts.Map;
 using UnityEngine;
 
+using aStar;
+using avoidance;
+using PathPlanning;
+
 [RequireComponent(typeof(CarController))]
 public class AIP1TrafficCar : MonoBehaviour
 {
+    public float colliderResizeFactor = 2f;
+    public int numberSteeringAngles = 3;
+    public bool allowReversing = true;   
+    public bool usePurepursuit = true;
+    public float k_p = 2f;
+    public float k_d = 1f;
+          
     private CarController m_Car; // the car controller we want to use
     private MapManager m_MapManager;
     private ObstacleMapManager m_ObstacleMapManager;
     private ObstacleMap m_ObstacleMap;
     private GameObject[] m_OtherCars;
     private LineOfSightGoal m_CurrentGoal;
+    private BoxCollider m_Collider;
+    Rigidbody my_rigidbody;
+    private List<AStarNode> nodePath = new();
+    private int currentNodeIdx;
+    private HybridAStarGenerator pathFinder = null;
+    public bool drawDebug = false;
+    private const float maxSpeed = 25f;
+    private Agent agent;
 
-    public float steering;
-    public float acceleration;
+    private static CollisionManager collisionManager;
+    private static CollisionDetector m_Detector = null;
+    private static bool StaticInitDone = false;
+    private float stuckTime = 0f;
 
     private void Start()
     {
         m_Car = GetComponent<CarController>();
+        m_CurrentGoal = (LineOfSightGoal)FindObjectOfType<GameManagerA2>().vehicleToGoalMapping[gameObject]; // This car's goal
+        my_rigidbody = GetComponent<Rigidbody>();
+
         m_MapManager = FindObjectOfType<MapManager>();
         m_ObstacleMapManager = FindObjectOfType<ObstacleMapManager>();
-        m_ObstacleMap = m_ObstacleMapManager.ObstacleMap; //Is not a MonoBehavior, so cannot fetch in the same fashion!
-        m_CurrentGoal = (LineOfSightGoal)FindObjectOfType<GameManagerA2>().vehicleToGoalMapping[gameObject]; //This car's goal.
+        m_ObstacleMap = m_ObstacleMapManager.ObstacleMap;
+        m_Collider = gameObject.transform.Find("Colliders/ColliderBottom").gameObject.GetComponent<BoxCollider>();
 
-        m_OtherCars = GameObject.FindGameObjectsWithTag("Player");
-        // Note that this array will have "holes" when objects are destroyed
-        // Will work for initial planning they should work
-        // If you dont like the "holes", you can re-fetch this during fixed update.
-
-        // Where to go?
-        var targetPosition = m_CurrentGoal.targetPosition; //World Coordinates.
-
-        // Equivalent ways to find all the targets in the scene
-        var targetObjects = m_MapManager.GetTargetObjects();
-        targetObjects = GameObject.FindGameObjectsWithTag("Target").ToList();
-
-        // Equivalent ways of finding the start positions
-        var startObjects = m_MapManager.GetStartObjects();
-        startObjects = GameObject.FindGameObjectsWithTag("Start").ToList();
-
-        // You can also fetch other types of objects using tags, assuming the objects you are looking for HAVE tags :).
-
-        // Plan your path here
-        // ...
-
-        // Easy way to find all position vectors is either "Keys" in above dictionary or:
-        // Iterates over LOCAL positions in the map. I.e (x, 0, z)
-        foreach (var localPosition in m_ObstacleMap.localBounds.allPositionsWithin)
+        if (!StaticInitDone)
         {
-            m_ObstacleMap.IsLocalPointTraversable(localPosition);
-            m_ObstacleMap.mapGrid.LocalToCell(localPosition); // Gives cell position
-            m_ObstacleMap.mapGrid.LocalToWorld(localPosition); //Gives world position
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            // Rescale grid to have square shaped grid cells with size proportional to the car length
+            float gridCellSize = m_Collider.transform.localScale.z;
+            Vector3 gridScale = m_ObstacleMap.mapGrid.transform.localScale;
+
+            m_ObstacleMapManager.grid.cellSize = new Vector3(
+                gridCellSize / gridScale.x,
+                gridCellSize / gridScale.z,
+                gridCellSize / gridScale.y);
+            m_MapManager.Initialize();
+            m_ObstacleMapManager.Initialize();
+            m_ObstacleMap = m_ObstacleMapManager.ObstacleMap;
+            StaticInitDone = true;
+            Debug.Log($"Grid rescaling: {sw.ElapsedMilliseconds} ms");
+
+            sw.Restart();
+            m_Detector = new CollisionDetector(m_ObstacleMap, margin: colliderResizeFactor * m_Collider.transform.localScale.x / 2f + 0.1f);
+            Debug.Log($"Detector init: {sw.ElapsedMilliseconds} ms");
+
+            // Init collision avoidance
+            CollisionAvoidanceAlgorithm collisionAlgorithm = new RVOAlgorithm(0.5f)
+            {
+                maxSpeed = maxSpeed,
+                maxAngle = 35f,
+                allowReversing = allowReversing,
+                maxAccelaration = 15f,
+                Detector = m_Detector,
+                TimeLookAhead = 3f
+            };
+            collisionManager = new();
+            collisionManager.SetCollisionAvoidanceAlgorithm(collisionAlgorithm);
+
+            StaticInitDone = true;
+            sw.Stop();
         }
 
-        // Iterates over CELL positions in the map.  "(x, z, 0)" or (x, y) in 2nd coordinates
-        foreach (var cellPosition in m_ObstacleMap.cellBounds.allPositionsWithin)
+        var localStart = m_ObstacleMap.mapGrid.WorldToLocal(transform.position);
+        var localGoal = m_ObstacleMap.mapGrid.WorldToLocal(m_CurrentGoal.targetPosition);
+
+        // Generate path with Hybrid A*
+        currentNodeIdx = 0;
+        pathFinder = new HybridAStarGenerator(m_ObstacleMap.mapGrid, m_ObstacleMap, m_Car.m_MaximumSteerAngle, m_Collider,
+                        colliderResizeFactor, false, allowReversing, 2f)
         {
-            m_ObstacleMap.IsCellTraversable(new Vector2Int(cellPosition.x, cellPosition.y));
-            m_ObstacleMap.mapGrid.CellToLocal(cellPosition); // Gives cell position
-            m_ObstacleMap.mapGrid.CellToWorld(cellPosition); // Gives world position
+            Detector = m_Detector
+        };
+
+        nodePath = pathFinder.GeneratePath(
+            new Vector3(localStart.x, 0.05f, localStart.z),
+            new Vector3(localGoal.x, 0.05f, localGoal.z),
+            transform.eulerAngles.y,
+            numberSteeringAngles);
+
+        nodePath = pathFinder.SmoothPath(nodePath);
+
+        Vector3 old_wp = localStart;
+        foreach (var wp in nodePath)
+        {
+            Debug.DrawLine(m_ObstacleMap.mapGrid.LocalToWorld(old_wp), m_ObstacleMap.mapGrid.LocalToWorld(wp.LocalPosition), Color.green, 2f);
+            old_wp = wp.LocalPosition;
         }
 
-        m_ObstacleMap.IsGlobalPointTraversable(transform.position);
-        // Remember transform.localPosition only gives a map coordinate if car is inside Grid. Normally we dont spawn it that way.
-        // Better to use this if you need local coordinates.
-        var carLocalPosition = m_ObstacleMap.mapGrid.WorldToLocal(transform.position);
-        m_ObstacleMap.IsLocalPointTraversable(carLocalPosition);
-
-        // Feel free to refer to any examples from previous assignments.
+        // Initialize velocity obstacles for traffic
+        agent = new Agent(Vec3To2(transform.position), Vec3To2(my_rigidbody.velocity), Vector3.zero, m_Collider.transform.localScale.z * colliderResizeFactor);
+        collisionManager.AddAgent(agent);
     }
 
 
     private void FixedUpdate()
     {
-        // Execute your path and collision checking here
-        // ...
+        // TODO: Try Drone RVO 
+        // TODO: Try car controller update for drone
 
-        // Feel free to refer to any examples from previous assignments.
+        // TODO: Fix HRVOs: HRVOs are still too symmetric and contain errors
 
-        //Example of cars moving into the centre of the field.
-        Vector3 avg_pos = m_OtherCars.Aggregate(Vector3.zero, (sum, car) => sum + car.transform.position) / m_OtherCars.Length;
+        if (nodePath.Count == 0)
+            return;
+        if (my_rigidbody.velocity.magnitude < 1f)
+            stuckTime += Time.fixedDeltaTime;
 
-        //var
-        (steering, acceleration) = ControlsTowardsPoint(avg_pos);
+        Vector3 targetVelocity = CalculateTargetVelocity();
 
-        m_Car.Move(steering, acceleration, acceleration, 0f);
-        
+        float avoidanceRadius = 1f; // FIXME: localscale should give car length, but is somehow way too large
+        agent.Update(new Agent(Vec3To2(transform.position), Vec3To2(my_rigidbody.velocity), Vec3To2(targetVelocity), avoidanceRadius));
 
+        Vector2 newVelocity = collisionManager.CalculateNewVelocity(agent, out bool isColliding);
+
+        // Avoid other agents if collision is detected via VO
+        Vector3 avoidanceVelocity = Vec2To3(newVelocity);
+        Vector3 avoidancePosition = transform.position + avoidanceVelocity;
+
+        PdControll(avoidancePosition, avoidanceVelocity);
+
+        Debug.DrawLine(transform.position, nodePath[currentNodeIdx].GetGlobalPosition(), Color.magenta);
+        // Debug.DrawLine(transform.position, avoidancePosition, Color.blue);
+        // Debug.DrawLine(transform.position, transform.position + avoidanceVelocity, Color.yellow);
     }
 
-    private (float steering, float acceleration) ControlsTowardsPoint(Vector3 avg_pos)
+    private void PdControll(Vector3 targetPosition, Vector3 targetVelocity)
     {
-        Vector3 direction = (avg_pos - transform.position).normalized;
+        Vector3 current_position = transform.position;
 
-        bool is_to_the_right = Vector3.Dot(direction, transform.right) > 0f;
-        bool is_to_the_front = Vector3.Dot(direction, transform.forward) > 0f;
+        if (Vector3.Distance(targetPosition, current_position) < 20f)
+        {
+            currentNodeIdx = Mathf.Min(currentNodeIdx + 1, nodePath.Count - 1);
+        }
+        
+        // Move via PD controller
+        Vector3 pos_error = targetPosition - current_position;
+        Vector3 vel_error = targetVelocity - my_rigidbody.velocity;
+        Vector3 desired_acceleration = (k_p * pos_error + k_d * vel_error).normalized; // normalize to receive steering and accel values between (-1, 1)
 
-        float steering = 0f;
-        float acceleration = 0;
+        float steering = Vector3.Dot(desired_acceleration, transform.right);
+        float acceleration = Vector3.Dot(desired_acceleration, transform.forward);
 
-        if (is_to_the_right && is_to_the_front)
-        {
-            steering = 1f;
-            acceleration = 1f;
-        }
-        else if (is_to_the_right && !is_to_the_front)
-        {
-            steering = -1f;
-            acceleration = -1f;
-        }
-        else if (!is_to_the_right && is_to_the_front)
-        {
-            steering = -1f;
-            acceleration = 1f;
-        }
-        else if (!is_to_the_right && !is_to_the_front)
-        {
-            steering = 1f;
-            acceleration = -1f;
-        }
+        m_Car.Move(steering, acceleration, acceleration, 0f);
+    }
 
-        float alpha = Mathf.Asin(Vector3.Dot(direction, transform.right));
-        if (is_to_the_front &&  Mathf.Abs(alpha) < 1f)
+    private Vector3 CalculateTargetVelocity()
+    {
+        int targetIdx;
+        // Pure pursuit target
+        if (usePurepursuit)
         {
-            steering = alpha;
-        }
+            targetIdx = NextVisibleNode();
 
-        return (steering, acceleration);
+            if (targetIdx == -1)
+            {
+                // Engage recovery mechanism when occluded
+                targetIdx = LastVisibleNode();
+                currentNodeIdx = targetIdx;
+
+                Vector3 recoveryPosition = nodePath[targetIdx].GetGlobalPosition();
+
+                float targetSpeed = Mathf.Lerp(0.01f, maxSpeed, ((Vec3To2(recoveryPosition) - Vec3To2(transform.position)) / maxSpeed).magnitude);
+                return (recoveryPosition - transform.position).normalized * targetSpeed;
+            }
+        } else {
+            targetIdx = currentNodeIdx;
+        }
+        currentNodeIdx = targetIdx;
+        // Use lookahead
+        Vector3 targetPosition = nodePath[targetIdx].GetGlobalPosition();
+        Vector2 targetPosition2d = Vec3To2(targetPosition);
+        Vector2 position2d = Vec3To2(transform.position);
+
+        Vector2 currentDirection = new(my_rigidbody.velocity.normalized.x, my_rigidbody.velocity.normalized.z);
+        Vector2 directionToLookhead = (targetPosition2d - position2d).normalized;
+
+        float lookaheadAngle = Vector2.Angle(directionToLookhead, currentDirection);
+        float pursuitTargetSpeed = Mathf.Lerp(0.01f, maxSpeed, 1f - Mathf.Clamp01(lookaheadAngle / 180f));
+        Vector3 targetVelocity = (targetPosition - transform.position).normalized * pursuitTargetSpeed;
+        
+        return targetVelocity;
+    }
+
+    private int NextVisibleNode()
+    {
+        float disregardedAngleDiff = 10f;
+
+        for (int i = currentNodeIdx; i < nodePath.Count; ++i)
+        {
+            Vector2 currentPosition = Vec3To2(transform.position);
+            Vector2 pathNodePosition = Vec3To2(nodePath[i].GetGlobalPosition());
+            Vector2 direction = (pathNodePosition - currentPosition).normalized;
+
+            // Only consider forward facing nodes in a given angle range
+            if (!m_Detector.LineCollision(currentPosition, pathNodePosition))
+                // && Vector2.Angle(Vec3To2(transform.forward), direction) < acceptableAngleDiff)
+                // && (Vector2.Angle(Vec3To2(transform.forward), direction) > 90f + disregardedAngleDiff 
+                //     || Vector2.Angle(Vec3To2(transform.forward), direction) < 90f - disregardedAngleDiff))
+            {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    private int LastVisibleNode()
+    {
+        float disregardedAngleDiff = 20;
+
+        for (int i = currentNodeIdx; i >= 0; --i)
+        {
+            Vector2 currentPosition = Vec3To2(transform.position);
+            Vector2 pathNodePosition = Vec3To2(nodePath[i].GetGlobalPosition());
+            Vector2 direction = (pathNodePosition - currentPosition).normalized;
+
+            // Disregard sideways nodes since car cannot drive to those
+            if (!m_Detector.LineCollision(currentPosition, pathNodePosition)
+                && (Vector2.Angle(Vec3To2(transform.forward), direction) > 90 + disregardedAngleDiff 
+                    || Vector2.Angle(Vec3To2(transform.forward), direction) < 90 - disregardedAngleDiff))
+            {
+                return i;
+            }
+        }
+        return Math.Max(0, currentNodeIdx - 100);
+    }
+
+    private void OnDrawGizmos() {
+        if (drawDebug)
+        {
+            collisionManager?.DrawDebug(agent);
+            // m_Detector?.DebugDrawBoundingBoxes();
+        }
+        // if (drawDebug && pathFinder != null && pathFinder.flowField != null)
+        // {
+        //     foreach (var posEntity in pathFinder.flowField)
+        //     {
+        //         var cell = new Vector3Int(posEntity.Key.x, posEntity.Key.y, 1);
+        //         var cellGlobal = m_MapManager.grid.CellToWorld(cell);
+
+        //         var gizmoSize = m_MapManager.grid.cellSize;
+        //         gizmoSize.y = 0.005f;
+        //         gizmoSize.Scale(m_MapManager.grid.transform.localScale * 0.8f);
+                
+        //         Gizmos.color = Mathf.CorrelatedColorTemperatureToRGB(1000f + 1000f * posEntity.Value);
+        //         Gizmos.DrawCube(cellGlobal, gizmoSize);
+        //     }
+        // }
+    }
+
+    private Vector2 Vec3To2(Vector3 vec)
+    {
+        return new Vector2(vec.x, vec.z);
+    }
+
+    private Vector3 Vec2To3(Vector2 vec)
+    {
+        return new Vector3(vec.x, 0f, vec.y);
     }
 }
