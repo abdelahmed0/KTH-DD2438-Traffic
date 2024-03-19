@@ -8,13 +8,18 @@ using System;
 using System.Collections.Generic;
 
 using aStar;
-using PathPlanning;
 using UnityEngine.Serialization;
+using PathPlanning;
+using Search;
+using PD;
+using Graphs;
+using PostProcessing;
+using UnityEngine.UIElements;
 
 [RequireComponent(typeof(CarController))]
 public class AIP3FormationCar : MonoBehaviour
 {
-    private PathType pathType = PathType.astar;
+    private PathType pathType = PathType.lineOfSight;
     public float colliderResizeFactor = 2f;
     public int numberSteeringAngles = 5;
     public bool allowReversing = false;   
@@ -47,7 +52,7 @@ public class AIP3FormationCar : MonoBehaviour
     private int currPathIdx = 1;
 
     private List<Vector3> path = new List<Vector3>();
-    private float pointFrequency = 8;
+    private float pointFrequency = 4;
 
     private bool isLeader = false;
     private static Vector3 leaderPosition;
@@ -62,7 +67,7 @@ public class AIP3FormationCar : MonoBehaviour
 
     private static bool[] update;
 
-    private float ghostLeader = 6f;
+    private float ghostLeader = 8f;
 
     private Vector3 tgt = new Vector3(0, 0, 0);
     
@@ -70,12 +75,21 @@ public class AIP3FormationCar : MonoBehaviour
 
     private Vector3 ghostPos = new Vector3(0, 0, 0);
 
-    private float velocity = 4f;
+    private float velocity = 5f;
 
     private List<Vector3> astarPath;
 
     private static float[] carDistances;
     private static bool[] isSlowing;
+
+    private List<Vector3> rrtPath;
+
+    private float carLength;
+
+    private static bool staticAstarInitDone = false;
+    private static List<Obstacle> listObstacles;
+
+    private static int[] gateIdxs;
     
     enum PathType
     {
@@ -92,10 +106,58 @@ public class AIP3FormationCar : MonoBehaviour
         m_ObstacleMapManager = FindObjectOfType<ObstacleMapManager>();
         m_ObstacleMap = m_ObstacleMapManager.ObstacleMap; //Is not a MonoBehavior, so cannot fetch in the same fashion!
         
-        print("Hello");
-        print(m_ObstacleMap);
+        // print(m_ObstacleMap);
 
         m_OtherCars = GameObject.FindGameObjectsWithTag("Player");
+        
+        // print("Num other cars");
+        // print(m_OtherCars.Length);
+        
+        // Figure out which car we are
+        int idx = -1;
+        for (int i = 0; i < m_OtherCars.Length; i++)
+        {
+            if (m_OtherCars[i].transform.position == transform.position)
+            {
+                idx = i;
+            }
+        }
+        // print("I am car " + idx + " at " + transform.position);
+
+        int left = 0;
+        int right = 0;
+        for (int i = 0; i < m_OtherCars.Length; i++)
+        {
+            if (i == idx)
+                continue;
+
+            Vector2 a = new Vector2(transform.position.x, transform.position.z);
+            Vector2 b = new Vector2(m_OtherCars[i].transform.position.x, m_OtherCars[i].transform.position.z);
+
+            float angle = Vector2.SignedAngle(a, b);
+            // print(angle);
+
+            // if (angle >= -90 && angle <= 90)
+            // {
+            //     right++;
+            // }
+            // else
+            // {
+            //     left++;
+            // }
+
+            if (transform.position.x > m_OtherCars[i].transform.position.x)
+            {
+                left++;
+            }
+            else
+            {
+                right++;
+            }
+
+        }
+
+        goalIdx = left;
         
         m_Collider = gameObject.transform.Find("Colliders/ColliderBottom").gameObject.GetComponent<BoxCollider>();
 
@@ -138,6 +200,12 @@ public class AIP3FormationCar : MonoBehaviour
         {
             isSlowing[i] = false;
         }
+
+        gateIdxs = new int[numGates];
+        for (int i = 0; i < gateIdxs.Length; i++)
+        {
+            gateIdxs[i] = 0;
+        }
         
         Debug.Log("HELLOOOOOOOOOOOOOO");
 
@@ -155,19 +223,19 @@ public class AIP3FormationCar : MonoBehaviour
             ctr++;
         }
 
-        // Get target gate for current car based on distance to gate
-        int curr = 0;
-        float val = Vector3.Distance(transform.position, gates[0].position);
-        for (int i = 1; i < gates.Length; i++)
-        {
-            float temp = Vector3.Distance(transform.position, gates[i].position);
-            if (temp < val)
-            {
-                curr = i;
-                val = temp;
-            }
-        }
-        goalIdx = curr;
+        // // Get target gate for current car based on distance to gate
+        // int curr = 0;
+        // float val = Vector3.Distance(transform.position, gates[0].position);
+        // for (int i = 1; i < gates.Length; i++)
+        // {
+        //     float temp = Vector3.Distance(transform.position, gates[i].position);
+        //     if (temp < val)
+        //     {
+        //         curr = i;
+        //         val = temp;
+        //     }
+        // }
+        // goalIdx = curr;
         
         // Set middle car as leader
         if (goalIdx == leaderIdx)
@@ -199,21 +267,32 @@ public class AIP3FormationCar : MonoBehaviour
         {
             pathSet[i, 0] = pathSet[i - 1, 1];
             
-            // TODO: Temporary Fix
-            if (i >= 6)
-            {
-                pathSet[i, 1] = gateGroup[i].transform.GetChild(Mathf.Abs(goalIdx - 4)).position;
-            }
-            else
-            {
-                pathSet[i, 1] = gateGroup[i].transform.GetChild(goalIdx).position;
-            }
+            // // TODO: Temporary Fix
+            // if (i >= 6)
+            // {
+            //     pathSet[i, 1] = gateGroup[i].transform.GetChild(Mathf.Abs(goalIdx - 4)).position;
+            // }
+            // else
+            // {
+            pathSet[i, 1] = gateGroup[i].transform.GetChild(goalIdx).position;
+            // }
             
             // Adjust vector to point to center of gate
             rotation = gateGroup[i].transform.rotation * Quaternion.Euler(0, 180f, 0);
             padding = new Vector3(gatePaddingMagnitude, 0, 0);
             padding = rotation * padding;
             pathSet[i, 1] += padding;
+        }
+        
+        if (pathType == PathType.lineOfSight)
+        {
+            float rotAngle = 90;
+            for (int i = 0; i < gateGroup.Count; i++)
+            {
+                Quaternion rot = gateGroup[i].transform.rotation * Quaternion.Euler(0, 90, 0);
+                Vector3 pad = new Vector3(4, 0, 0);
+                pathSet[i, 1] = pathSet[i, 1] + (rot * pad);
+            }
         }
 
         // Create path and add points every pointFrequency steps along line
@@ -319,45 +398,158 @@ public class AIP3FormationCar : MonoBehaviour
             }
         }
         
-        
         // Make A* Path
         if (pathType == PathType.astar)
         {
             float rotAngle = 90;
             astarPath = new List<Vector3>();
             Quaternion testRot = gateGroup[0].transform.rotation * Quaternion.Euler(0, 90, 0);
-            Vector3 pad = new Vector3(gatePaddingMagnitude, 0, 0);
+            Vector3 pad = new Vector3(0, 0, 0);
             Vector3 testEnd = pathSet[0, 1] + (testRot * pad);
-            AStar astar = new AStar(pathSet[0, 0], testEnd, m_ObstacleMapManager, GetInitialDirection());
+            AStarr astar = new AStarr(pathSet[0, 0], testEnd, m_ObstacleMapManager, GetInitialDirection());
             astarPath.AddRange(astar.FindPath());
-
+            
             for (int i = 1; i < gateGroup.Count; i++)
             {
                 Vector3 currStart = pathSet[i, 0];
                 Vector3 currGoal = pathSet[i, 1];
                 Vector3 idee = astarPath[astarPath.Count - 1] - astarPath[astarPath.Count - 2];
-                // Vector2 initDir = new Vector2(Mathf.RoundToInt(idee.x), Mathf.RoundToInt(idee.z));
                 Vector2 initDir = new Vector2(idee.x, idee.z);
                 
-                // print("Hey");
-                // print(idee);
-                // print(initDir);
-                //
-
-                rotAngle = 90;
-                if (i >= 6 && i < 8)
-                {
-                    rotAngle = 270;
-                }
-
                 Quaternion rot = gateGroup[i].transform.rotation * Quaternion.Euler(0, rotAngle, 0);
                 Vector3 realGoal = currGoal + (rot * pad);
-
-                AStar currAstar = new AStar(currStart, realGoal, m_ObstacleMapManager, initDir);
+                
+                if (i == gateGroup.Count - 1)
+                {
+                    realGoal = currGoal;
+                }
+            
+                AStarr currAstar = new AStarr(currStart, realGoal, m_ObstacleMapManager, initDir);
                 astarPath.AddRange(currAstar.FindPath());
             }
+
+            // if (!staticAstarInitDone)
+            // {
+            //     var carBounds = transform.Find("SkyCar").transform.Find("SkyCarBody").GetComponent<Renderer>().bounds;
+            //     var cSpaceSize = 0.4f + ((carBounds.size.x + carBounds.size.z) / 3);
+            //     var high_Max = 0.1f + carBounds.extents.y * 2;
+            //     var high_Min = 0.1f;
+            //     carLength = MathF.Max(carBounds.extents.x, carBounds.extents.z) * 2;
+            //     
+            //     listObstacles = new List<Obstacle>();
+            //
+            //     foreach (var gameObject in m_ObstacleMap.obstacleObjects) {
+            //
+            //         var objectCollider = gameObject.GetComponent<Collider>();
+            //         
+            //         if (gameObject.name.Equals("targetGate"))
+            //         {
+            //             Vector3 p = new Vector3(3, 0, 0);
+            //             Quaternion r = objectCollider.transform.rotation * Quaternion.Euler(0, 180f, 0);
+            //             Vector3 center = objectCollider.transform.position + (r * p);
+            //             Bounds b = new Bounds(center, new Vector3(1f, 1f, 1f));
+            //             Obstacle obstacle = new Obstacle(objectCollider, high_Max, high_Min, gate: true, testBounds: b);
+            //             obstacle.ShowObstacle(Color.magenta);
+            //             listObstacles.Add(obstacle);
+            //         }
+            //
+            //         else if (gameObject.name.Contains("startOverhead")) {
+            //
+            //             Obstacle obstacleRight = new Obstacle(objectCollider, true, high_Max);
+            //             // obstacleRight.ShowObstacle(Color.magenta);
+            //             obstacleRight.AddCarSpace(cSpaceSize);
+            //             obstacleRight.ShowObstacle(Color.red);
+            //             listObstacles.Add(obstacleRight);
+            //
+            //             Obstacle obstacleLeft = new Obstacle(objectCollider, false, high_Max);
+            //             // obstacleLeft.ShowObstacle(Color.magenta);
+            //             obstacleLeft.AddCarSpace(cSpaceSize);
+            //             obstacleLeft.ShowObstacle(Color.red);
+            //             listObstacles.Add(obstacleLeft);
+            //             
+            //         } else if (objectCollider != null && !gameObject.name.Contains("goalFlag")) {
+            //
+            //             Obstacle obstacle = new Obstacle(objectCollider, high_Max, high_Min);
+            //             obstacle.ShowObstacle(Color.magenta);
+            //             obstacle.AddCarSpace(cSpaceSize);
+            //             obstacle.ShowObstacle(Color.red);
+            //             listObstacles.Add(obstacle);
+            //         }
+            //     }
+            //     
+            //     foreach (var obstacle in listObstacles) {
+            //         obstacle.CalculateVisibleEdges(listObstacles);
+            //     }
+            //
+            //     staticAstarInitDone = true;
+            // }
+
+            // PDCar.path = new List<int>();
+
+            // List<Vector3> points = new List<Vector3>();
+            //
+            // for (int i = 0; i < gateGroup.Count ; i++)
+            // {
+            //     Point start = new Point(pathSet[i, 0]);
+            //     Point before_start = new Point(pathSet[i, 0] - m_Car.transform.forward);
+            //     Point end = new Point(pathSet[i, 1]);
+            //
+            //     List<Vector3> moves = new List<Vector3>() {
+            //         Vector3.back, Vector3.forward, Vector3.left, Vector3.right
+            //     };
+            //
+            //     int tries = 0;
+            //     
+            //     while (!Obstacle.GetVisibilityPoints(start, listObstacles)) {
+            //         start = new Point(pathSet[i, 0] + ((tries / 4) * moves[tries % 4]));
+            //         Debug.Log(start);
+            //         tries++;
+            //     }
+            //     tries = 0;
+            //     while (!Obstacle.GetVisibilityPoints(end, listObstacles)) {
+            //         end = new Point(pathSet[i, 1] + ((tries / 4) * moves[tries % 4]));
+            //         tries++;
+            //     }
+            //
+            //     // List<Point> currVertices = VisibilityGraphManager.allVertices;
+            //     // List<Tuple<Point, Point>> currEdges = VisibilityGraphManager.visibleEdges;
+            //     
+            //     List<Point> vertices = Graphs.VisibilityGraphManager.allVertices;
+            //     List<Tuple<Point, Point>> edges = Graphs.VisibilityGraphManager.visibleEdges;
+            //
+            //     vertices.Insert(0, before_start);
+            //     vertices.Insert(1, start);
+            //     vertices.Add(end);
+            //
+            //     AStar AStarAlgorithm  = new AStar();
+            //     
+            //     PDCar.path = AStarAlgorithm.regularA(1, vertices.Count - 1, vertices, edges, PDCar.HeuristicsAStar, 0);
+            //
+            //     if (goalIdx == 2)
+            //     {
+            //         for (int j = 1; j < PDCar.path.Count; j++) {
+            //             Debug.DrawLine(vertices[PDCar.path[j-1]].ToVector3(), vertices[PDCar.path[j]].ToVector3(), Color.green, 10000f);
+            //         }
+            //         
+            //     }
+            // }
+
+            // PDCar.path = AStarAlgorithm.regularA(1, vertices.Count - 1, vertices, edges, PDCar.HeuristicsAStar, 0);
+            
+            
+            
         }
-        
+
+        // RRT rrt = new RRT();
+        // // List<float> temp;
+        // List<Vector2> rrtOut;
+        // rrtPath = new List<Vector3>();
+        // (rrtOut, _) = rrt.FindPath(pathSet[0, 0], pathSet[0, 1], m_Detector);
+        // foreach (var pt in rrtOut)
+        // {
+        //     rrtPath.Add(new Vector3(pt.x, pathSet[0, 0].y, pt.y));
+        // }
+
 
 
 
@@ -393,95 +585,107 @@ public class AIP3FormationCar : MonoBehaviour
             //
             // Vector3 targetPosition = path[currPathIdx];
             //
+            
+            //----------------
 
-            float newVelocity = velocity;
-
-            carDistances[goalIdx] = Vector3.Distance(transform.position, gatesList[gateIdx]);
-            if (goalIdx == 4)
-            {
-                // print(carDistances[gateIdx]);
-                // print("Pozys");
-                // print(transform.position);
-                // print(gatesList[gateIdx]);
-            }
-            // print("Cardistance min");
-            // print(carDistances.Min());
-            // print("Current diff");
-            // print(carDistances[goalIdx]);
-            // print(carDistances[goalIdx] - carDistances.Min());
-            if (carDistances.Max() - carDistances[goalIdx] > 1)
-            // if (Mathf.Abs(carDistances[goalIdx] - carDistances.Min()) > 2)
-            {
-                newVelocity /= 5;
-                isSlowing[goalIdx] = true;
-            }
-            else
-            {
-                isSlowing[goalIdx] = false;
-            }
-            // print(goalIdx);
-            // print(isSlowing[goalIdx]);
-
-            Vector3 targetPosition = astarPath[currPathIdx];
-            Vector3 padding = new Vector3(0, 0, 0);
-            PdControllSimpleAstar(targetPosition, newVelocity, padding);
+            // float newVelocity = velocity;
+            //
+            // carDistances[goalIdx] = Vector3.Distance(transform.position, gatesList[gateIdx]);
+            // if (carDistances.Max() - carDistances[goalIdx] > 1)
+            // {
+            //     newVelocity /= 5;
+            //     isSlowing[goalIdx] = true;
+            // }
+            // else
+            // {
+            //     isSlowing[goalIdx] = false;
+            // }
+            //
+            // Vector3 targetPosition = astarPath[currPathIdx];
+            // Vector3 padding = new Vector3(0, 0, 0);
+            // PdControllSimpleAstar(targetPosition, newVelocity, padding);
 
         }
 
         // Update leader position
         else if (pathType == PathType.lineOfSight)
         {
-            if (isLeader)
-            {
-                leaderPosition = transform.position;
-            }
+            // if (isLeader)
+            // {
+            //     leaderPosition = transform.position;
+            // }
+            //
+            // if (update[goalIdx])
+            // {
+            //     relativePosition = gatesList[gateIdx] - leaderGatesList[gateIdx];
+            //     update[goalIdx] = false;
+            // }
+            //
 
-            if (update[goalIdx])
-            {
-                relativePosition = gatesList[gateIdx] - leaderGatesList[gateIdx];
-                update[goalIdx] = false;
-            }
+            float newVelocity = velocity;
+            carDistances[goalIdx] = Vector3.Distance(transform.position, gatesList[gateIdx]);
+            // if (gateIdxs[goalIdx] > gateIdxs.Min())
+            // {
+            //     print("HELLLLPPPP " + goalIdx);
+            // }
+            // print("Car " + goalIdx + " gateIdx = " + gateIdx);
             
-
+            // if (carDistances.Max() - carDistances[goalIdx] > 1 || gateIdxs[goalIdx] > gateIdxs.Min())
+            // {
+            //     // print("HEYYYYYY");
+            //     // newVelocity /= 5;
+            //     isSlowing[goalIdx] = true;
+            // }
+            // else if (gateIdxs[goalIdx] < gateIdxs.Max())
+            // {
+            //     newVelocity = velocity * 10;
+            //     isSlowing[goalIdx] = false;
+            // }
+            // else
+            // {
+            //     newVelocity = velocity * 10;
+            //     isSlowing[goalIdx] = false;
+            // }
+                
             Vector3 targetPosition = path[currPathIdx];
             Vector3 padding = new Vector3(0, 0, 0);
-            if (!isLeader)
-            {
-                // targetPosition = leaderPosition + relativePosition;
-                // targetPosition = lineIntersection(path[currPathIdx], path[currPathIdx + 1], leaderPosition,
-                //     leaderPosition + relativePosition);
-                
-                Debug.Log(currPathIdx);
-
-                Vector3 point = leaderPosition + relativePosition;
-                Vector3 linePoint;
-                Vector3 lineDir;
-                if (gateIdx == 0)
-                {
-                    linePoint = pathSet[0, 0];
-                    lineDir = gatesList[gateIdx] - linePoint;
-                }
-                else
-                {
-                    linePoint = gatesList[gateIdx - 1];
-                    lineDir = gatesList[gateIdx] - linePoint;
-                }
-                // Vector3 linePoint = path[currPathIdx+2];
-                // Vector3 lineDir = path[currPathIdx + 3] - linePoint;
-                
-                lineDir.Normalize();
-                Vector3 v = point - linePoint;
-                float d = Vector3.Dot(v, lineDir);
-                Vector3 closest = linePoint + (lineDir * d);
-
-                targetPosition = closest;
-                
-                // Debug.DrawLine(path[currPathIdx], path[currPathIdx + 1], Color.red);
-                // Debug.DrawLine(leaderPosition, leaderPosition + relativePosition, Color.yellow);
-                // Debug.DrawLine(transform.position + height, targetPosition + height, Color.yellow);
-                padding = Vector3.Normalize(lineDir) * ghostLeader;
-                ghostPos = targetPosition + padding;
-            }
+            // if (!isLeader)
+            // {
+            //     // targetPosition = leaderPosition + relativePosition;
+            //     // targetPosition = lineIntersection(path[currPathIdx], path[currPathIdx + 1], leaderPosition,
+            //     //     leaderPosition + relativePosition);
+            //     
+            //     Debug.Log(currPathIdx);
+            //
+            //     Vector3 point = leaderPosition + relativePosition;
+            //     Vector3 linePoint;
+            //     Vector3 lineDir;
+            //     if (gateIdx == 0)
+            //     {
+            //         linePoint = pathSet[0, 0];
+            //         lineDir = gatesList[gateIdx] - linePoint;
+            //     }
+            //     else
+            //     {
+            //         linePoint = gatesList[gateIdx - 1];
+            //         lineDir = gatesList[gateIdx] - linePoint;
+            //     }
+            //     // Vector3 linePoint = path[currPathIdx+2];
+            //     // Vector3 lineDir = path[currPathIdx + 3] - linePoint;
+            //     
+            //     lineDir.Normalize();
+            //     Vector3 v = point - linePoint;
+            //     float d = Vector3.Dot(v, lineDir);
+            //     Vector3 closest = linePoint + (lineDir * d);
+            //
+            //     targetPosition = closest;
+            //     
+            //     // Debug.DrawLine(path[currPathIdx], path[currPathIdx + 1], Color.red);
+            //     // Debug.DrawLine(leaderPosition, leaderPosition + relativePosition, Color.yellow);
+            //     // Debug.DrawLine(transform.position + height, targetPosition + height, Color.yellow);
+            //     padding = Vector3.Normalize(lineDir) * ghostLeader;
+            //     ghostPos = targetPosition + padding;
+            // }
             
             tgt = targetPosition;
 
@@ -489,7 +693,7 @@ public class AIP3FormationCar : MonoBehaviour
 
             // Debug.DrawLine(transform.position, targetPosition, Color.cyan);
             
-            PdControllSimpleLOS(targetPosition, velocity, padding);
+            PdControllSimpleLOS(targetPosition, newVelocity, padding);
             
             // PdControll(targetPosition, targetVelocity);
         }
@@ -553,13 +757,13 @@ public class AIP3FormationCar : MonoBehaviour
         
         Vector3 posError = paddedPos - currentPos;
 
-        if (!isLeader)
-        {
-            if (posError.magnitude > (ghostLeader * 1.5f))
-            {
-                velocity *= 1;
-            }
-        }
+        // if (!isLeader)
+        // {
+        //     if (posError.magnitude > (ghostLeader * 1.5f))
+        //     {
+        //         velocity *= 6;
+        //     }
+        // }
         
         Vector3 tv = Vector3.Normalize(paddedPos - transform.position) * velocity;
         Vector3 velError = tv - my_rigidbody.velocity;
@@ -573,26 +777,32 @@ public class AIP3FormationCar : MonoBehaviour
         //     // acceleration = 0;
         // }
         
-        float threshold = 3f;
-        float gateThreshold = 1f;
+        float threshold = 6f;
+        float gateThreshold = 3f;
         float distance = Vector3.Distance(paddedPos, currentPos);
         float gateDistance = Vector3.Distance(gatesList[gateIdx], currentPos);
 
-        if (isLeader && distance <= threshold)
+        // if (isLeader && distance <= threshold)
+        // {
+        //     currPathIdx++;
+        // }
+        
+        if (distance <= threshold)
         {
             currPathIdx++;
         }
 
-        if (isLeader && gateDistance <= gateThreshold)
+        if (gateDistance <= gateThreshold)
         {
             gateIdx++;
+            gateIdxs[goalIdx]++;
             for (int i = 0; i < update.Length; i++)
             {
                 if (i != leaderIdx)
                     update[i] = true;
             }
         }
-
+        
         m_Car.Move(steering, acceleration, acceleration, 0f);
     }
 
@@ -724,14 +934,21 @@ public class AIP3FormationCar : MonoBehaviour
         }
         
         // Draw blue spheres at target points
-        if (pathType == PathType.lineOfSight && isLeader && path != null)
+        if (pathType == PathType.lineOfSight && path != null)
         {
             foreach (var point in path)
             {
                 Gizmos.color = Color.blue;
                 Gizmos.DrawSphere(point + height, 0.5f);
-                
-                Gizmos.color = Color.cyan;
+
+                if (isSlowing[goalIdx])
+                {
+                    Gizmos.color = Color.red;
+                }
+                else
+                {
+                    Gizmos.color = Color.cyan;
+                }
                 Gizmos.DrawLine(transform.position + height, tgt + height);
             }
         }
@@ -769,8 +986,17 @@ public class AIP3FormationCar : MonoBehaviour
             Gizmos.color = Color.blue;
             Gizmos.DrawSphere(ghostPos + height, 0.5f);
             
-            Gizmos.color = Color.cyan;
-            Gizmos.DrawLine(transform.position + height, ghostPos + height);
+            // Gizmos.color = Color.cyan;
+            // Gizmos.DrawLine(transform.position + height, ghostPos + height);
+        }
+
+        if (rrtPath != null)
+        {
+            for (int i = 1; i < rrtPath.Count; i++)
+            {
+                Gizmos.color = Color.blue;
+                Gizmos.DrawLine(rrtPath[i - 1] + height, rrtPath[i] + height);
+            }
         }
     }
     
