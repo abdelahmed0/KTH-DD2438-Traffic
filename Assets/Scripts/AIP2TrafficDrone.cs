@@ -74,11 +74,11 @@ public class AIP2TrafficDrone : MonoBehaviour
             CollisionAvoidanceAlgorithm collisionAlgorithm = new HRVOAlgorithm()
             {
                 maxSpeed = m_Drone.max_speed,
-                maxAngle = 60f,
+                maxAngle = 40f,
                 allowReversing = allowReversing,
                 maxAccelaration = m_Drone.max_acceleration,
                 Detector = m_Detector,
-                TimeLookAhead = 1f
+                TimeLookAhead = 1.5f
             };
 
             collisionManager = new CollisionManager();
