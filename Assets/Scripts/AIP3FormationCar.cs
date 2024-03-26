@@ -4,29 +4,23 @@ using Scripts.Game;
 using Scripts.Map;
 using UnityEngine;
 using System;
-    
+
 using System.Collections.Generic;
 
 using aStar;
-using UnityEngine.Serialization;
 using PathPlanning;
-using Search;
-using PD;
-using Graphs;
-using PostProcessing;
-using UnityEngine.UIElements;
+using UnityEngine.Serialization;
 
 [RequireComponent(typeof(CarController))]
 public class AIP3FormationCar : MonoBehaviour
 {
-    private PathType pathType = PathType.lineOfSight;
     public float colliderResizeFactor = 2f;
     public int numberSteeringAngles = 5;
     public bool allowReversing = false;   
     public bool smoothPath = false;     
     private Vector3 targetVelocity;
-    private float k_p = 2;
-    private float k_d = 3;
+    public float k_p = 2f;
+    public float k_d = 3f;
     private float gatePaddingMagnitude = 3f;
     public float followThrough = 1.5f;
     
@@ -49,10 +43,10 @@ public class AIP3FormationCar : MonoBehaviour
     private Rigidbody my_rigidbody;
 
     private Vector3[,] pathSet;
-    private int currPathIdx = 1;
+    private static int currPathIdx = 1;
 
     private List<Vector3> path = new List<Vector3>();
-    private float pointFrequency = 4;
+    private float pointFrequency = 8;
 
     private bool isLeader = false;
     private static Vector3 leaderPosition;
@@ -63,11 +57,11 @@ public class AIP3FormationCar : MonoBehaviour
 
     private List<Vector3> gatesList = new List<Vector3>();
     private static List<Vector3> leaderGatesList = new List<Vector3>();
-    private int gateIdx = 0;
+    private static int gateIdx = 0;
 
     private static bool[] update;
 
-    private float ghostLeader = 8f;
+    private float ghostLeader = 4f;
 
     private Vector3 tgt = new Vector3(0, 0, 0);
     
@@ -75,28 +69,7 @@ public class AIP3FormationCar : MonoBehaviour
 
     private Vector3 ghostPos = new Vector3(0, 0, 0);
 
-    private float velocity = 5f;
-
-    private List<Vector3> astarPath;
-
-    private static float[] carDistances;
-    private static bool[] isSlowing;
-
-    private List<Vector3> rrtPath;
-
-    private float carLength;
-
-    private static bool staticAstarInitDone = false;
-    private static List<Obstacle> listObstacles;
-
-    private static int[] gateIdxs;
-    
-    enum PathType
-    {
-        astar,
-        lineOfSight,
-        hybridAstar
-    }
+    private float velocity = 10f;
     
     
     private void Start()
@@ -105,38 +78,8 @@ public class AIP3FormationCar : MonoBehaviour
         m_MapManager = FindObjectOfType<MapManager>();
         m_ObstacleMapManager = FindObjectOfType<ObstacleMapManager>();
         m_ObstacleMap = m_ObstacleMapManager.ObstacleMap; //Is not a MonoBehavior, so cannot fetch in the same fashion!
-        
+
         m_OtherCars = GameObject.FindGameObjectsWithTag("Player");
-        
-        // Figure out which car we are
-        int idx = -1;
-        for (int i = 0; i < m_OtherCars.Length; i++)
-        {
-            if (m_OtherCars[i].transform.position == transform.position)
-            {
-                idx = i;
-            }
-        }
-
-        int left = 0;
-        int right = 0;
-        for (int i = 0; i < m_OtherCars.Length; i++)
-        {
-            if (i == idx)
-                continue;
-
-            if (transform.position.x > m_OtherCars[i].transform.position.x)
-            {
-                left++;
-            }
-            else
-            {
-                right++;
-            }
-
-        }
-
-        goalIdx = left;
         
         m_Collider = gameObject.transform.Find("Colliders/ColliderBottom").gameObject.GetComponent<BoxCollider>();
 
@@ -145,7 +88,6 @@ public class AIP3FormationCar : MonoBehaviour
         // For finding individual gates
         var gateGroup = m_MapManager.GetTargetObjects();
         // gateGroup = GameObject.FindGameObjectsWithTag("Target").ToList();
-        
         var individualGates = GameObject.FindGameObjectsWithTag("SubTarget").ToList(); // Gives all individual gates on map... but this might not be so useful
 
         int numGates = 0;
@@ -167,40 +109,33 @@ public class AIP3FormationCar : MonoBehaviour
         {
             update[i] = false;
         }
-
-        carDistances = new float[numGates];
-        for (int i = 0; i < carDistances.Length; i++)
-        {
-            carDistances[i] = 10000;
-        }
-
-        isSlowing = new bool[numGates];
-        for (int i = 0; i < isSlowing.Length; i++)
-        {
-            isSlowing[i] = false;
-        }
-
-        gateIdxs = new int[numGates];
-        for (int i = 0; i < gateIdxs.Length; i++)
-        {
-            gateIdxs[i] = 0;
-        }
         
         Transform[] gates = new Transform[numGates];
 
         int ctr = 0;
-
-        Debug.Log(numGates);
-        Debug.Log(gates.Length);
-        Debug.Log(gateGroup[0]);
 
         foreach (Transform child in gateGroup[0].transform)
         {
             gates[ctr] = child;
             ctr++;
         }
+
+        // Get target gate for current car based on distance to gate
+        int curr = 0;
+        float val = Vector3.Distance(transform.position, gates[0].position);
+        for (int i = 1; i < gates.Length; i++)
+        {
+            float temp = Vector3.Distance(transform.position, gates[i].position);
+            if (temp < val)
+            {
+                curr = i;
+                val = temp;
+            }
+        }
+        goalIdx = curr;
         
         // Set middle car as leader
+        // TODO: Undo hard-code
         if (goalIdx == leaderIdx)
         {
             isLeader = true;
@@ -229,24 +164,22 @@ public class AIP3FormationCar : MonoBehaviour
         for (int i = 1; i < gateGroup.Count; i++)
         {
             pathSet[i, 0] = pathSet[i - 1, 1];
-            pathSet[i, 1] = gateGroup[i].transform.GetChild(goalIdx).position;
+            
+            // TODO: Temporary Fix
+            if (i >= 6)
+            {
+                pathSet[i, 1] = gateGroup[i].transform.GetChild(Mathf.Abs(goalIdx - 4)).position;
+            }
+            else
+            {
+                pathSet[i, 1] = gateGroup[i].transform.GetChild(goalIdx).position;
+            }
             
             // Adjust vector to point to center of gate
             rotation = gateGroup[i].transform.rotation * Quaternion.Euler(0, 180f, 0);
             padding = new Vector3(gatePaddingMagnitude, 0, 0);
             padding = rotation * padding;
             pathSet[i, 1] += padding;
-        }
-        
-        if (pathType == PathType.lineOfSight)
-        {
-            float rotAngle = 90;
-            for (int i = 0; i < gateGroup.Count; i++)
-            {
-                Quaternion rot = gateGroup[i].transform.rotation * Quaternion.Euler(0, 90, 0);
-                Vector3 pad = new Vector3(4, 0, 0);
-                pathSet[i, 1] = pathSet[i, 1] + (rot * pad);
-            }
         }
 
         // Create path and add points every pointFrequency steps along line
@@ -306,156 +239,98 @@ public class AIP3FormationCar : MonoBehaviour
             StaticInitDone = true;
             sw.Stop();
         }
-
-        if (pathType == PathType.hybridAstar)
-        {
-            // Generate path with Hybrid A*
-            currentNodeIdx = 0;
-            HybridAStarGenerator pathFinder = new HybridAStarGenerator(m_ObstacleMap.mapGrid, m_ObstacleMap, m_Car.m_MaximumSteerAngle, m_Collider,
-                colliderResizeFactor, false, allowReversing, 2f);
-        
-            var localStart = m_ObstacleMap.mapGrid.WorldToLocal(pathSet[0, 0]);
-            var localGoal = m_ObstacleMap.mapGrid.WorldToLocal(pathSet[0, 1]);
-        
-            nodePath = pathFinder.GeneratePath(
-                new Vector3(localStart.x, 0.05f, localStart.z),
-                new Vector3(localGoal.x, 0.05f, localGoal.z),
-                transform.eulerAngles.y,
-                numberSteeringAngles);
-        
-            for (int i = 1; i < gateGroup.Count; i++)
-            {
-                localStart = m_ObstacleMap.mapGrid.WorldToLocal(pathSet[i, 0]);
-                localGoal = m_ObstacleMap.mapGrid.WorldToLocal(pathSet[i, 1]);
-            
-                // Pad start so it follows through the gate
-                Vector3 prevDir = nodePath[nodePath.Count - 1].LocalPosition - nodePath[nodePath.Count - 2].LocalPosition;
-                prevDir = Vector3.Normalize(prevDir) * followThrough;
-                localStart += prevDir;
-        
-                List<AStarNode> tempList = pathFinder.GeneratePath(
-                    new Vector3(localStart.x, 0.05f, localStart.z),
-                    new Vector3(localGoal.x, 0.05f, localGoal.z),
-                    transform.eulerAngles.y,
-                    numberSteeringAngles);
-                nodePath.AddRange(tempList);
-            }
-        
-            nodePath = smoothPath ? pathFinder.SmoothPath(nodePath) : nodePath;
-        
-            Vector3 old_wp = m_ObstacleMap.mapGrid.WorldToLocal(pathSet[0, 0]);
-            foreach (var wp in nodePath)
-            {
-                Debug.DrawLine(m_ObstacleMap.mapGrid.LocalToWorld(old_wp), m_ObstacleMap.mapGrid.LocalToWorld(wp.LocalPosition), Color.blue, 100f);
-                old_wp = wp.LocalPosition;
-            }
-        }
-        
-        // Make A* Path
-        if (pathType == PathType.astar)
-        {
-            float rotAngle = 90;
-            astarPath = new List<Vector3>();
-            Quaternion testRot = gateGroup[0].transform.rotation * Quaternion.Euler(0, 90, 0);
-            Vector3 pad = new Vector3(0, 0, 0);
-            Vector3 testEnd = pathSet[0, 1] + (testRot * pad);
-            AStarr astar = new AStarr(pathSet[0, 0], testEnd, m_ObstacleMapManager, GetInitialDirection());
-            astarPath.AddRange(astar.FindPath());
-            
-            for (int i = 1; i < gateGroup.Count; i++)
-            {
-                Vector3 currStart = pathSet[i, 0];
-                Vector3 currGoal = pathSet[i, 1];
-                Vector3 idee = astarPath[astarPath.Count - 1] - astarPath[astarPath.Count - 2];
-                Vector2 initDir = new Vector2(idee.x, idee.z);
-                
-                Quaternion rot = gateGroup[i].transform.rotation * Quaternion.Euler(0, rotAngle, 0);
-                Vector3 realGoal = currGoal + (rot * pad);
-                
-                if (i == gateGroup.Count - 1)
-                {
-                    realGoal = currGoal;
-                }
-            
-                AStarr currAstar = new AStarr(currStart, realGoal, m_ObstacleMapManager, initDir);
-                astarPath.AddRange(currAstar.FindPath());
-            }
-        }
     }
 
 
     private void FixedUpdate()
     {
         // Update leader position
-        if (pathType == PathType.lineOfSight)
+        if (isLeader)
         {
-            float newVelocity = velocity;
-            carDistances[goalIdx] = Vector3.Distance(transform.position, gatesList[gateIdx]);
-                
-            Vector3 targetPosition = path[currPathIdx];
-            Vector3 padding = new Vector3(0, 0, 0);
+            leaderPosition = transform.position;
+        }
+
+        if (update[goalIdx])
+        {
+            relativePosition = gatesList[gateIdx] - leaderGatesList[gateIdx];
+            update[goalIdx] = false;
+        }
+
+        Vector3 targetPosition = path[currPathIdx];
+        Vector3 padding = new Vector3(0, 0, 0);
+        if (!isLeader)
+        {
+            Vector3 point = leaderPosition + relativePosition;
+            Vector3 linePoint;
+            Vector3 lineDir;
+            if (gateIdx == 0)
+            {
+                linePoint = pathSet[0, 0];
+                lineDir = gatesList[gateIdx] - linePoint;
+            }
+            else
+            {
+                linePoint = gatesList[gateIdx - 1];
+                lineDir = gatesList[gateIdx] - linePoint;
+            }
             
+            lineDir.Normalize();
+            Vector3 v = point - linePoint;
+            float d = Vector3.Dot(v, lineDir);
+            Vector3 closest = linePoint + (lineDir * d);
+
+            targetPosition = closest;
+
             tgt = targetPosition;
             
-            PdControllSimpleLOS(targetPosition, newVelocity, padding);
+            padding = Vector3.Normalize(lineDir) * ghostLeader;
+            ghostPos = targetPosition + padding;
         }
+        
+        PdControllSimple(targetPosition, velocity, padding);
         
     }
 
-    private void PdControllSimpleLOS(Vector3 targetPosition, float velocity, Vector3 padding)
+    private void PdControllSimple(Vector3 targetPosition, float velocity, Vector3 padding)
     {
         Vector3 currentPos = transform.position;
 
         Vector3 paddedPos = targetPosition + padding;
+
+        Vector3 tv = Vector3.Normalize(paddedPos - transform.position) * velocity;
         
         Vector3 posError = paddedPos - currentPos;
-
-        // if (!isLeader)
-        // {
-        //     if (posError.magnitude > (ghostLeader * 1.5f))
-        //     {
-        //         velocity *= 6;
-        //     }
-        // }
-        
-        Vector3 tv = Vector3.Normalize(paddedPos - transform.position) * velocity;
         Vector3 velError = tv - my_rigidbody.velocity;
         Vector3 desiredAccel = (k_p * posError + k_d * velError).normalized;
 
         float steering = Vector3.Dot(desiredAccel, transform.right);
         float acceleration = Vector3.Dot(desiredAccel, transform.forward);
         
-        float threshold = 6f;
-        float gateThreshold = 3f;
+        float threshold = 3f;
+        float gateThreshold = 1f;
         float distance = Vector3.Distance(paddedPos, currentPos);
         float gateDistance = Vector3.Distance(gatesList[gateIdx], currentPos);
-        
-        if (distance <= threshold)
+
+        if (isLeader && distance <= threshold)
         {
             currPathIdx++;
         }
 
-        if (gateDistance <= gateThreshold)
+        if (isLeader && gateDistance <= gateThreshold)
         {
             gateIdx++;
-            gateIdxs[goalIdx]++;
             for (int i = 0; i < update.Length; i++)
             {
                 if (i != leaderIdx)
                     update[i] = true;
             }
         }
-        
+
         m_Car.Move(steering, acceleration, acceleration, 0f);
     }
     
     private Vector3 lineIntersection(Vector3 pt1, Vector3 pt2, Vector3 pt3, Vector3 pt4)
     {
-        Debug.Log(pt1);
-        Debug.Log(pt2);
-        Debug.Log(pt3);
-        Debug.Log(pt4);
-        Debug.Log("I hate cars");
         float m1 = (pt1.x - pt2.y) / (pt2.x - pt2.z);
         float m2 = (pt3.x - pt3.y) / (pt4.x - pt4.z);
     
@@ -480,90 +355,25 @@ public class AIP3FormationCar : MonoBehaviour
         // throw new NotImplementedException();
         
         // Draw car paths
-        if (pathType == PathType.lineOfSight && pathSet != null)
+        for (int i = 0; i < pathSet.GetLength(0); i++)
         {
-            for (int i = 0; i < pathSet.GetLength(0); i++)
-            {
-                // Debug.DrawLine(pathSet[i, 0] + height, pathSet[i, 1] + height, Color.green, 100f);
-                Gizmos.color = Color.green;
-                Gizmos.DrawLine(pathSet[i, 0] + height, pathSet[i, 1] + height);
-            }
-        }
-        
-
-        if (pathType == PathType.astar && astarPath != null)
-        {
-            // Draw path
-            for (int i = 0; i < astarPath.Count - 1; i++)
-            {
-                Gizmos.color = Color.yellow;
-                Gizmos.DrawLine(astarPath[i] + height, astarPath[i+1] + height);
-            }
-            
-            // Draw spheres at target points
-            for (int i = 0; i < astarPath.Count; i++)
-            {
-                Gizmos.color = Color.magenta;
-                Gizmos.DrawSphere(astarPath[i] + height, radius:0.5f);
-
-                if (isSlowing[goalIdx])
-                {
-                    Gizmos.color = Color.red;
-                }
-                else
-                {
-                    Gizmos.color = Color.cyan;
-                }
-                Gizmos.DrawLine(transform.position + height, astarPath[currPathIdx] + height);
-            }
-
-            if (goalIdx == 1)
-            {
-                Gizmos.color = Color.cyan;
-                Gizmos.DrawSphere(gatesList[gateIdx] + height, 0.5f);
-            }
+            // Debug.DrawLine(pathSet[i, 0] + height, pathSet[i, 1] + height, Color.green, 100f);
+            Gizmos.color = Color.green;
+            Gizmos.DrawLine(pathSet[i, 0] + height, pathSet[i, 1] + height);
         }
         
         // Draw blue spheres at target points
-        if (pathType == PathType.lineOfSight && path != null)
+        if (isLeader)
         {
             foreach (var point in path)
             {
                 Gizmos.color = Color.blue;
                 Gizmos.DrawSphere(point + height, 0.5f);
-
-                if (isSlowing[goalIdx])
-                {
-                    Gizmos.color = Color.red;
-                }
-                else
-                {
-                    Gizmos.color = Color.cyan;
-                }
-                Gizmos.DrawLine(transform.position + height, tgt + height);
             }
         }
         
-        // // Draw orthogonal leader line
-        // if (isLeader)
-        // {
-        //     // Debug.Log("LEADING");
-        //     Vector3 orth = Vector3.Cross(transform.forward, new Vector3(0, 1, 0)).normalized * 35;
-        //     Vector3 l = transform.position + orth;
-        //     Vector3 r = transform.position + (Quaternion.Euler(0, 180f, 0) * orth);
-        //     Gizmos.color = Color.black;
-        //     Gizmos.DrawLine(l + height, r + height);
-        // }
-        // if (!isLeader)
-        // {
-        //     // Gizmos.color = Color.black;
-        //     // Gizmos.DrawLine(leaderPosition + height, leaderPosition + relativePosition + height);
-        //     Gizmos.color = Color.magenta;
-        //     // Gizmos.DrawSphere(leaderPosition + relativePosition + height, 0.5f);
-        //     Gizmos.DrawSphere(tgt + height, 0.5f);
-        // }
         
-        if (pathType == PathType.lineOfSight && !isLeader)
+        if (!isLeader)
         {
             // Gizmos.color = Color.black;
             // Gizmos.DrawLine(leaderPosition + height, leaderPosition + relativePosition + height);
@@ -571,33 +381,14 @@ public class AIP3FormationCar : MonoBehaviour
             // Gizmos.DrawSphere(leaderPosition + relativePosition + height, 0.5f);
             Gizmos.DrawSphere(tgt + height, 0.5f);
             
-            // Gizmos.color = Color.cyan;
-            // Gizmos.DrawLine(transform.position + height, tgt + height);
+            Gizmos.color = Color.cyan;
+            Gizmos.DrawLine(transform.position + height, tgt + height);
             
-            Gizmos.color = Color.blue;
+            Gizmos.color = Color.white;
             Gizmos.DrawSphere(ghostPos + height, 0.5f);
             
-            // Gizmos.color = Color.cyan;
-            // Gizmos.DrawLine(transform.position + height, ghostPos + height);
+            Gizmos.color = Color.yellow;
+            Gizmos.DrawLine(transform.position + height, ghostPos + height);
         }
-
-        if (rrtPath != null)
-        {
-            for (int i = 1; i < rrtPath.Count; i++)
-            {
-                Gizmos.color = Color.blue;
-                Gizmos.DrawLine(rrtPath[i - 1] + height, rrtPath[i] + height);
-            }
-        }
-    }
-    
-    private Vector2 GetInitialDirection()
-    {
-        float angle = transform.rotation.eulerAngles.y;
-        angle = Mathf.Round(angle / 45f) * 45f;
-        angle *= Mathf.Deg2Rad;
-        Vector2 ret = new Vector2(Mathf.RoundToInt(Mathf.Sin(angle)), Mathf.RoundToInt(Mathf.Cos(angle)));
-
-        return ret;
     }
 }

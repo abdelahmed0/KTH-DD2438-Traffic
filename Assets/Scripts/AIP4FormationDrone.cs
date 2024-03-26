@@ -248,9 +248,6 @@ public class AIP4FormationDrone : MonoBehaviour
         Vector3 currentPos = transform.position;
 
         Vector3 paddedPos = targetPosition + padding;
-
-        // Vector3 ghostTarget = targetPosition + (Vector3.Normalize(targetPosition - transform.position) * followThrough);
-        // Vector3 ghostTarget = targetPosition;
         
         Vector3 posError = paddedPos - currentPos;
         if (!isLeader)
@@ -259,7 +256,6 @@ public class AIP4FormationDrone : MonoBehaviour
             {
                 velocity *= 8;
             }
-            // Debug.Log(posError.magnitude);
         }
         
         Vector3 tv = Vector3.Normalize(paddedPos - transform.position) * velocity;
@@ -268,11 +264,6 @@ public class AIP4FormationDrone : MonoBehaviour
 
         float steering = Vector3.Dot(desiredAccel, transform.right);
         float acceleration = Vector3.Dot(desiredAccel, transform.forward);
-
-        // if (Vector3.Angle(transform.forward, targetPosition) > 90)
-        // {
-        //     // acceleration = 0;
-        // }
         
         float threshold = 3f;
         float gateThreshold = 3f;
@@ -286,7 +277,6 @@ public class AIP4FormationDrone : MonoBehaviour
 
         if (isLeader && gateDistance <= gateThreshold)
         {
-            Debug.Log("REACHED GATE!!!!!");
             gateIdx++;
             for (int i = 0; i < update.Length; i++)
             {
@@ -300,11 +290,6 @@ public class AIP4FormationDrone : MonoBehaviour
     
     private Vector3 lineIntersection(Vector3 pt1, Vector3 pt2, Vector3 pt3, Vector3 pt4)
     {
-        Debug.Log(pt1);
-        Debug.Log(pt2);
-        Debug.Log(pt3);
-        Debug.Log(pt4);
-        Debug.Log("I hate cars");
         float m1 = (pt1.x - pt2.y) / (pt2.x - pt2.z);
         float m2 = (pt3.x - pt3.y) / (pt4.x - pt4.z);
     
