@@ -52,7 +52,7 @@ public class AIP4FormationDrone : MonoBehaviour
 
     private static bool[] update;
 
-    private float ghostLeader = 6;
+    private float ghostLeader = 4;
 
     private Vector3 tgt = new Vector3(0, 0, 0);
     
@@ -60,12 +60,11 @@ public class AIP4FormationDrone : MonoBehaviour
 
     private Vector3 ghostPos = new Vector3(0, 0, 0);
 
-    private float velocity = 8;
+    private float velocity = 2f;
 
 
     private void Start()
     {
-        Debug.Log("Entered 1");
         m_Drone = GetComponent<DroneController>();
         
         m_MapManager = FindObjectOfType<MapManager>();
@@ -81,8 +80,6 @@ public class AIP4FormationDrone : MonoBehaviour
 
         int numGates = 0;
         
-        Debug.Log("Entered 2");
-        
         foreach (var group in gateGroup)
         {
             foreach (Transform child in group.transform) // I know this looks odd, but Transform implements Enumerable. When you iterate it, you iterate it's children.
@@ -94,8 +91,6 @@ public class AIP4FormationDrone : MonoBehaviour
 
             break;
         }
-        
-        Debug.Log("Entered 3");
         
         update = new bool[numGates];
         for (int i = 0; i < update.Length; i++)
@@ -113,8 +108,6 @@ public class AIP4FormationDrone : MonoBehaviour
             ctr++;
         }
         
-        Debug.Log("Entered 4");
-        
         // Get target gate for current car based on distance to gate
         int curr = 0;
         float val = Vector3.Distance(transform.position, gates[0].position);
@@ -129,8 +122,6 @@ public class AIP4FormationDrone : MonoBehaviour
         }
         goalIdx = curr;
         
-        Debug.Log("Entered 5");
-        
         // Set middle car as leader
         if (goalIdx == leaderIdx)
         {
@@ -143,17 +134,12 @@ public class AIP4FormationDrone : MonoBehaviour
         pathSet[0, 0] = transform.position;
         pathSet[0, 1] = gateGroup[0].transform.GetChild(goalIdx).position;
         
-        Debug.Log("Initialized");
-        
         // Move target vector to center of gate
         Quaternion rotation = gateGroup[0].transform.rotation * Quaternion.Euler(0, 180f, 0);
         Vector3 padding = new Vector3(gatePaddingMagnitude, 1.8f, 0);
         padding = rotation * padding;
-        // Debug.DrawLine(pathSet[0, 1], pathSet[0, 1] + padding, Color.magenta, 100f);
         pathSet[0, 1] += padding;
         
-        
-
         if (!isLeader)
         {
             relativePosition = (gateGroup[0].transform.GetChild(goalIdx).position + padding) -
@@ -165,15 +151,7 @@ public class AIP4FormationDrone : MonoBehaviour
         {
             pathSet[i, 0] = pathSet[i - 1, 1];
             
-            // TODO: Temporary Fix
-            if (i >= 6)
-            {
-                pathSet[i, 1] = gateGroup[i].transform.GetChild(Mathf.Abs(goalIdx - 4)).position;
-            }
-            else
-            {
-                pathSet[i, 1] = gateGroup[i].transform.GetChild(goalIdx).position;
-            }
+            pathSet[i, 1] = gateGroup[i].transform.GetChild(goalIdx).position;
             
             // Adjust vector to point to center of gate
             rotation = gateGroup[i].transform.rotation * Quaternion.Euler(0, 180f, 0);
@@ -261,12 +239,7 @@ public class AIP4FormationDrone : MonoBehaviour
 
             ghostPos = targetPosition + padding;
         }
-
-        // Vector3 targetPosition = path[currPathIdx];
-        
         PdControllSimple(targetPosition, velocity, padding);
-        
-        // PdControll(targetPosition, targetVelocity);
         
     }
 
@@ -282,9 +255,9 @@ public class AIP4FormationDrone : MonoBehaviour
         Vector3 posError = paddedPos - currentPos;
         if (!isLeader)
         {
-            if (posError.magnitude > ghostLeader)
+            if (posError.magnitude > 1)
             {
-                velocity *= 4;
+                velocity *= 8;
             }
             // Debug.Log(posError.magnitude);
         }
@@ -302,7 +275,7 @@ public class AIP4FormationDrone : MonoBehaviour
         // }
         
         float threshold = 3f;
-        float gateThreshold = 1f;
+        float gateThreshold = 3f;
         float distance = Vector3.Distance(paddedPos, currentPos);
         float gateDistance = Vector3.Distance(gatesList[gateIdx], currentPos);
 
@@ -353,18 +326,14 @@ public class AIP4FormationDrone : MonoBehaviour
 
     private void OnDrawGizmos()
     {
-        // throw new NotImplementedException();
-    
         if (pathSet == null)
         {
-            // Debug.Log("Not Ready Yet");
             return;
         }
         
         // Draw car paths
         for (int i = 0; i < pathSet.GetLength(0); i++)
         {
-            // Debug.DrawLine(pathSet[i, 0] + height, pathSet[i, 1] + height, Color.green, 100f);
             Gizmos.color = Color.green;
             Gizmos.DrawLine(pathSet[i, 0] + height, pathSet[i, 1] + height);
         }
@@ -378,27 +347,10 @@ public class AIP4FormationDrone : MonoBehaviour
                 Gizmos.DrawSphere(point + height, 0.5f);
             }
         }
-        
-        // // Draw orthogonal leader line
-        // if (isLeader)
-        // {
-        //     // Debug.Log("LEADING");
-        //     Vector3 orth = Vector3.Cross(transform.forward, new Vector3(0, 1, 0)).normalized * 35;
-        //     Vector3 l = transform.position + orth;
-        //     Vector3 r = transform.position + (Quaternion.Euler(0, 180f, 0) * orth);
-        //     Gizmos.color = Color.black;
-        //     Gizmos.DrawLine(l + height, r + height);
-        // }
         if (!isLeader)
         {
-            // Gizmos.color = Color.black;
-            // Gizmos.DrawLine(leaderPosition + height, leaderPosition + relativePosition + height);
             Gizmos.color = Color.magenta;
-            // Gizmos.DrawSphere(leaderPosition + relativePosition + height, 0.5f);
             Gizmos.DrawSphere(tgt + height, 0.5f);
-            
-            // Gizmos.color = Color.cyan;
-            // Gizmos.DrawLine(transform.position + height, tgt + height);
             
             Gizmos.color = Color.white;
             Gizmos.DrawSphere(ghostPos + height, 0.5f);
