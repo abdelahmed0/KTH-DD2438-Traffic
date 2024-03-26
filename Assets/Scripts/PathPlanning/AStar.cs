@@ -13,11 +13,11 @@ namespace PathPlanning
     using System.Runtime.CompilerServices;
 
 
-    public class AStar
+    public class AStarr
     {
         private ObstacleMap cMap;
         private float ht;
-        private float scale = 4;
+        private float scale = 1;
         private Vector2 InitialDirection;
 
         private Vector2 startPos;
@@ -27,7 +27,7 @@ namespace PathPlanning
         private float toleranceScale;
         [SerializeField] private double maximumComputeTime = 10;
 
-        [SerializeField] private HeuristicType heuristic = HeuristicType.Euclidean;
+        [SerializeField] private HeuristicType heuristic = HeuristicType.Manhattan;
 
         [SerializeField] private float octileOrthogonalCost = 1f;
         [SerializeField] private float octileDiagonalCost = 100 * Mathf.Sqrt(2);
@@ -75,7 +75,7 @@ namespace PathPlanning
             return new Vector3(vec.x, ht, vec.y);
         }
         
-        public AStar(Vector3 startPos, Vector3 goalPos, ObstacleMapManager mapManager, Vector2 InitialDirection)
+        public AStarr(Vector3 startPos, Vector3 goalPos, ObstacleMapManager mapManager, Vector2 InitialDirection)
         {
             this.mapManager = mapManager;
             cMap = mapManager.ObstacleMap;
@@ -407,8 +407,13 @@ namespace PathPlanning
                     Vector3 localPos = mapManager.grid.WorldToLocal(worldPos);
                     Vector2Int localCell = new Vector2Int(Mathf.RoundToInt(localPos.x), Mathf.RoundToInt(localPos.z));
                     ObstacleMap.Traversability trav = cMap.IsGlobalPointTraversable(worldPos);
+                    // if (trav == ObstacleMap.Traversability.Partial)
+                    // {
+                    //     Debug.Log("TESSTT");
+                    //     Debug.Log(Vector2.Distance(new_pos, goalPos));
+                    // }
                     if (trav == ObstacleMap.Traversability.Free ||
-                        trav == ObstacleMap.Traversability.Partial)
+                        Vector2.Distance(new_pos, goalPos) < 5f)
                     // if (cMap.GetCellState(new_pos) == OurCollisionMap.State.Free)
                     {
                         float tent_g = g_score[curr] + (directions[i] * scale).magnitude;
@@ -417,7 +422,8 @@ namespace PathPlanning
                             && !VecEquals(curr - prev[curr], prev[curr] - prev[prev[curr]])
                             && !VecEquals(prev[curr] - prev[prev[curr]], prev[prev[curr]] - prev[prev[prev[curr]]]))
                         {
-                            tent_g += 5000000;
+                            // tent_g += 5000000;
+                            tent_g += 0;
                             // continue;
                         }
                             
